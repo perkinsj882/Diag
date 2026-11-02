@@ -1,0 +1,203 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Reusable Hardened Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidCategory(cat) {
+      return cat is string && cat.size() >= 1 && cat.size() <= 40 &&
+             cat in ['Mechanical', 'Electrical', 'Hydraulic', 'Pneumatic', 'Computer Controller', 'Computer'];
+    }
+
+    function isValidSeverity(sev) {
+      return sev is string && sev.size() >= 1 && sev.size() <= 20 &&
+             sev in ['CRITICAL', 'HIGH', 'MODERATE', 'LOW'];
+    }
+
+    function isValidDiagnosticStatus(st) {
+      return st is string && st.size() >= 1 && st.size() <= 20 &&
+             st in ['IN_PROGRESS', 'RESOLVED'];
+    }
+
+    // 3. Entity Validation Blueprints
+    function isValidEquipmentProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.userId == request.auth.uid &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+             data.modelNumber is string && data.modelNumber.size() >= 1 && data.modelNumber.size() <= 100 &&
+             isValidCategory(data.systemCategory) &&
+             data.environmentType is string && data.environmentType.size() >= 1 && data.environmentType.size() <= 80 &&
+             data.operatingHours is int && data.operatingHours >= 0 && data.operatingHours <= 10000000 &&
+             data.notes is string && data.notes.size() <= 1000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidDiagnosticSession(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.userId == request.auth.uid &&
+             data.equipmentName is string && data.equipmentName.size() >= 1 && data.equipmentName.size() <= 120 &&
+             data.equipmentModel is string && data.equipmentModel.size() >= 1 && data.equipmentModel.size() <= 100 &&
+             isValidCategory(data.systemCategory) &&
+             data.environmentType is string && data.environmentType.size() >= 1 && data.environmentType.size() <= 80 &&
+             data.symptomDescription is string && data.symptomDescription.size() >= 1 && data.symptomDescription.size() <= 3000 &&
+             data.attachedMediaSummary is string && data.attachedMediaSummary.size() <= 500 &&
+             data.rootCauseTitle is string && data.rootCauseTitle.size() >= 1 && data.rootCauseTitle.size() <= 250 &&
+             isValidSeverity(data.severity) &&
+             data.confidencePercent is int && data.confidencePercent >= 0 && data.confidencePercent <= 100 &&
+             data.technicalAnalysis is string && data.technicalAnalysis.size() >= 1 && data.technicalAnalysis.size() <= 5000 &&
+             data.safetyWarnings is list && data.safetyWarnings.size() <= 10 &&
+             (data.safetyWarnings.size() == 0 || (data.safetyWarnings[0] is string && data.safetyWarnings[0].size() <= 400)) &&
+             data.requiredTools is list && data.requiredTools.size() <= 15 &&
+             (data.requiredTools.size() == 0 || (data.requiredTools[0] is string && data.requiredTools[0].size() <= 300)) &&
+             data.repairSteps is list && data.repairSteps.size() >= 1 && data.repairSteps.size() <= 20 &&
+             data.repairSteps[0] is string && data.repairSteps[0].size() <= 800 &&
+             data.completedStepIndices is list && data.completedStepIndices.size() <= 20 &&
+             (data.completedStepIndices.size() == 0 || data.completedStepIndices[0] is int) &&
+             data.verificationTest is string && data.verificationTest.size() <= 1500 &&
+             isValidDiagnosticStatus(data.status) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidTroubleshootingFlowchart(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.userId == request.auth.uid &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 160 &&
+             data.equipmentModel is string && data.equipmentModel.size() >= 1 && data.equipmentModel.size() <= 100 &&
+             isValidCategory(data.systemCategory) &&
+             data.environmentType is string && data.environmentType.size() >= 1 && data.environmentType.size() <= 80 &&
+             data.failureMode is string && data.failureMode.size() >= 1 && data.failureMode.size() <= 250 &&
+             data.currentNodeId is string && data.currentNodeId.size() >= 1 && data.currentNodeId.size() <= 64 &&
+             data.visitedPathSummary is string && data.visitedPathSummary.size() <= 2000 &&
+             data.nodesList is list && data.nodesList.size() >= 1 && data.nodesList.size() <= 25 &&
+             data.nodesList[0] is string && data.nodesList[0].size() <= 600 &&
+             data.isResolved is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // 4. Collection: /equipment/{equipmentId}
+    match /equipment/{equipmentId} {
+      allow get: if isSignedIn() && isValidId(equipmentId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && existing().userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       isValidId(equipmentId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'name', 'modelNumber', 'systemCategory',
+                         'environmentType', 'operatingHours', 'notes', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'name', 'modelNumber', 'systemCategory',
+                         'environmentType', 'operatingHours', 'notes', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidEquipmentProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(equipmentId) &&
+                       isValidEquipmentProfile(incoming()) &&
+                       existing().userId == request.auth.uid &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'name', 'modelNumber', 'systemCategory',
+                         'environmentType', 'operatingHours', 'notes', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(equipmentId) && existing().userId == request.auth.uid;
+    }
+
+    // 5. Collection: /diagnostics/{diagnosticId}
+    match /diagnostics/{diagnosticId} {
+      allow get: if isSignedIn() && isValidId(diagnosticId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && existing().userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       isValidId(diagnosticId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'equipmentName', 'equipmentModel', 'systemCategory',
+                         'environmentType', 'symptomDescription', 'attachedMediaSummary',
+                         'rootCauseTitle', 'severity', 'confidencePercent', 'technicalAnalysis',
+                         'safetyWarnings', 'requiredTools', 'repairSteps', 'completedStepIndices',
+                         'verificationTest', 'status', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'equipmentName', 'equipmentModel', 'systemCategory',
+                         'environmentType', 'symptomDescription', 'attachedMediaSummary',
+                         'rootCauseTitle', 'severity', 'confidencePercent', 'technicalAnalysis',
+                         'safetyWarnings', 'requiredTools', 'repairSteps', 'completedStepIndices',
+                         'verificationTest', 'status', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidDiagnosticSession(incoming());
+
+      // Terminal State Locking: Once status reaches 'RESOLVED', no further updates are allowed.
+      allow update: if isSignedIn() &&
+                       isValidId(diagnosticId) &&
+                       isValidDiagnosticSession(incoming()) &&
+                       existing().userId == request.auth.uid &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       existing().status != 'RESOLVED' &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'completedStepIndices', 'status', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(diagnosticId) && existing().userId == request.auth.uid;
+    }
+
+    // 6. Collection: /flowcharts/{flowchartId}
+    match /flowcharts/{flowchartId} {
+      allow get: if isSignedIn() && isValidId(flowchartId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && existing().userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       isValidId(flowchartId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'title', 'equipmentModel', 'systemCategory',
+                         'environmentType', 'failureMode', 'currentNodeId',
+                         'visitedPathSummary', 'nodesList', 'isResolved',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'title', 'equipmentModel', 'systemCategory',
+                         'environmentType', 'failureMode', 'currentNodeId',
+                         'visitedPathSummary', 'nodesList', 'isResolved',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidTroubleshootingFlowchart(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(flowchartId) &&
+                       isValidTroubleshootingFlowchart(incoming()) &&
+                       existing().userId == request.auth.uid &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'currentNodeId', 'visitedPathSummary', 'isResolved', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(flowchartId) && existing().userId == request.auth.uid;
+    }
+  }
+}

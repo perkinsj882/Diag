@@ -1,0 +1,291 @@
+{
+  "entities": {
+    "EquipmentProfile": {
+      "title": "EquipmentProfile",
+      "description": "Represents a registered mechanical, electrical, hydraulic, pneumatic, computer controller (PLC/ECU/CNC), or computer asset.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the authenticated owner."
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name of the equipment or system."
+        },
+        "modelNumber": {
+          "type": "string",
+          "description": "Manufacturer model or serial designation."
+        },
+        "systemCategory": {
+          "type": "string",
+          "enum": [
+            "Mechanical",
+            "Electrical",
+            "Hydraulic",
+            "Pneumatic",
+            "Computer Controller",
+            "Computer"
+          ],
+          "description": "Primary engineering domain of the equipment."
+        },
+        "environmentType": {
+          "type": "string",
+          "description": "Operational environment (e.g., Heavy Industrial, Marine, Data Center, Automotive, Manufacturing)."
+        },
+        "operatingHours": {
+          "type": "integer",
+          "description": "Total logged operating hours."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Configuration notes, firmware version, or maintenance history summary."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation (must submit FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update (must submit FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "name",
+        "modelNumber",
+        "systemCategory",
+        "environmentType",
+        "operatingHours",
+        "notes",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "DiagnosticSession": {
+      "title": "DiagnosticSession",
+      "description": "Multimodal AI diagnostic report and step-by-step repair guide tailored to a specific equipment model and environment.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the authenticated owner."
+        },
+        "equipmentName": {
+          "type": "string",
+          "description": "Name of the diagnosed equipment."
+        },
+        "equipmentModel": {
+          "type": "string",
+          "description": "Specific equipment model number."
+        },
+        "systemCategory": {
+          "type": "string",
+          "enum": [
+            "Mechanical",
+            "Electrical",
+            "Hydraulic",
+            "Pneumatic",
+            "Computer Controller",
+            "Computer"
+          ],
+          "description": "System domain category."
+        },
+        "environmentType": {
+          "type": "string",
+          "description": "Operating environment where the failure occurred."
+        },
+        "symptomDescription": {
+          "type": "string",
+          "description": "User prompt describing symptoms, fault codes, noises, or behaviors."
+        },
+        "attachedMediaSummary": {
+          "type": "string",
+          "description": "Summary of multimodal inputs analyzed (images, audio acoustic profile, video frames)."
+        },
+        "rootCauseTitle": {
+          "type": "string",
+          "description": "Identified primary failure cause."
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "CRITICAL",
+            "HIGH",
+            "MODERATE",
+            "LOW"
+          ],
+          "description": "Urgency and hazard level of the failure."
+        },
+        "confidencePercent": {
+          "type": "integer",
+          "description": "Diagnostic confidence score from 0 to 100."
+        },
+        "technicalAnalysis": {
+          "type": "string",
+          "description": "Detailed engineering breakdown of why the failure occurred."
+        },
+        "safetyWarnings": {
+          "type": "array",
+          "description": "Lockout/Tagout (LOTO), depressurization, ESD, or high-voltage safety precautions."
+        },
+        "requiredTools": {
+          "type": "array",
+          "description": "Tools, gauges, software utilities, and replacement parts needed."
+        },
+        "repairSteps": {
+          "type": "array",
+          "description": "Ordered step-by-step repair instructions."
+        },
+        "completedStepIndices": {
+          "type": "array",
+          "description": "Indices of repair steps completed by the technician."
+        },
+        "verificationTest": {
+          "type": "string",
+          "description": "Post-repair test procedure to confirm nominal operation."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "IN_PROGRESS",
+            "RESOLVED"
+          ],
+          "description": "Lifecycle state of the repair session."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation (must submit FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update (must submit FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "equipmentName",
+        "equipmentModel",
+        "systemCategory",
+        "environmentType",
+        "symptomDescription",
+        "attachedMediaSummary",
+        "rootCauseTitle",
+        "severity",
+        "confidencePercent",
+        "technicalAnalysis",
+        "safetyWarnings",
+        "requiredTools",
+        "repairSteps",
+        "completedStepIndices",
+        "verificationTest",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "TroubleshootingFlowchart": {
+      "title": "TroubleshootingFlowchart",
+      "description": "Interactive conditional yes/no decision tree for isolating failures across mechanical, electrical, hydraulic, pneumatic, computer controller, and computer systems.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the authenticated owner."
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the interactive troubleshooting flowchart."
+        },
+        "equipmentModel": {
+          "type": "string",
+          "description": "Target equipment model or family."
+        },
+        "systemCategory": {
+          "type": "string",
+          "enum": [
+            "Mechanical",
+            "Electrical",
+            "Hydraulic",
+            "Pneumatic",
+            "Computer Controller",
+            "Computer"
+          ],
+          "description": "System domain category."
+        },
+        "environmentType": {
+          "type": "string",
+          "description": "Target operating environment."
+        },
+        "failureMode": {
+          "type": "string",
+          "description": "Common failure symptom being narrowed down."
+        },
+        "currentNodeId": {
+          "type": "string",
+          "description": "ID of the active decision or conclusion node in the walkthrough."
+        },
+        "visitedPathSummary": {
+          "type": "string",
+          "description": "Breadcrumb log of Yes/No observations recorded so far."
+        },
+        "nodesList": {
+          "type": "array",
+          "description": "Ordered list of decision/conclusion nodes encoded as 'nodeId::nodeType::prompt::hint::yesNodeId::noNodeId::action'."
+        },
+        "isResolved": {
+          "type": "boolean",
+          "description": "Whether the user has reached a root cause conclusion."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation (must submit FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update (must submit FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "title",
+        "equipmentModel",
+        "systemCategory",
+        "environmentType",
+        "failureMode",
+        "currentNodeId",
+        "visitedPathSummary",
+        "nodesList",
+        "isResolved",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/equipment/{equipmentId}": {
+      "schema": {
+        "$ref": "#/entities/EquipmentProfile"
+      },
+      "description": "Stores user-owned equipment profiles across all 6 system domains."
+    },
+    "/diagnostics/{diagnosticId}": {
+      "schema": {
+        "$ref": "#/entities/DiagnosticSession"
+      },
+      "description": "Stores multimodal diagnostic sessions and step-by-step repair guides."
+    },
+    "/flowcharts/{flowchartId}": {
+      "schema": {
+        "$ref": "#/entities/TroubleshootingFlowchart"
+      },
+      "description": "Stores interactive yes/no troubleshooting flowcharts and walkthrough states."
+    }
+  }
+}

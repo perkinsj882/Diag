@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">MechSight</string>
+    <string name="auth_title">MechSight Field Diagnostics</string>
+    <string name="auth_subtitle">Multimodal failure analysis, interactive decision flowcharts, and model-specific repair guides across Mechanical, Electrical, Hydraulic, Pneumatic, Computer Controller, and Computer systems.</string>
+    <string name="sign_in_google">Sign in with Google</string>
+    <string name="sign_out">Sign Out</string>
+    <string name="nav_diagnose">Diagnose</string>
+    <string name="nav_flowcharts">Flowcharts</string>
+    <string name="nav_equipment">Equipment</string>
+    <string name="nav_history">Repair Log</string>
+    <string name="hero_badge">MULTIMODAL ENGINEERING DIAGNOSTICS</string>
+    <string name="btn_run_diagnosis">Run Multimodal AI Diagnosis</string>
+    <string name="btn_generate_flowchart">Generate AI Troubleshooting Flowchart</string>
+    <string name="btn_seed_starter_kit">Load Reference Equipment &amp; Flowcharts</string>
+</resources>
