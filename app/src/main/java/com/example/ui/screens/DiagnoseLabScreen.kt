@@ -32,11 +32,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Email
@@ -45,7 +47,9 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideoFile
 import androidx.compose.material.icons.filled.Warning
@@ -72,6 +76,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,23 +91,38 @@ import androidx.core.content.ContextCompat
 import com.example.data.model.DiagnosticSession
 import com.example.data.model.EnvironmentPreset
 import com.example.data.model.EquipmentProfile
+import com.example.data.model.MechanicVoiceObservation
 import com.example.data.model.SystemCategory
+import com.example.ui.components.AutomotiveUnitConverterCard
 import com.example.ui.components.CameraCaptureDialog
 import com.example.ui.components.CameraCaptureMode
 import com.example.ui.components.CategoryBadge
+import com.example.ui.components.DiagnosticReportVoiceLoggerCard
 import com.example.ui.components.HandsFreeSpeechRecognizerCard
+import com.example.ui.components.IdentifiedAutomotivePart
+import com.example.ui.components.ObdBleScannerBannerCard
+import com.example.ui.components.RepairGuideSectionTarget
 import com.example.ui.components.SchematicHeroBanner
 import com.example.ui.components.SeverityChip
+import com.example.ui.components.VinAndMileageServicePanel
+import com.example.ui.components.VisualPartIdState
+import com.example.ui.components.VisualPartIdentifierCard
 import com.example.ui.components.categoryAccentColor
 import com.example.ui.components.categoryIcon
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.HazardCrimson
 import com.example.ui.theme.SafetyAmber
 import com.example.ui.theme.SignalEmerald
+import com.example.util.AutomotiveUnitSystem
+import com.example.util.DiagnosticCsvExporter
 import com.example.util.DiagnosticPdfExporter
+import com.example.util.ServiceIntervalNotificationManager
 import com.example.viewmodel.AiTaskState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.File
+import java.text.NumberFormat
+import java.util.Locale
 import kotlin.math.log10
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -112,6 +132,7 @@ fun DiagnoseLabScreen(
     diagnosticsList: List<DiagnosticSession>,
     activeDiagnosticId: String?,
     aiTaskState: AiTaskState,
+    visualPartIdState: VisualPartIdState,
     preselectedEquipment: EquipmentProfile?,
     onRunDiagnosis: (
         equipmentName: String,
@@ -123,19 +144,40 @@ fun DiagnoseLabScreen(
         attachedMediaBytes: ByteArray?,
         attachedMediaMimeType: String?,
         acousticSummary: String,
-        mediaSummaryLabel: String
+        mediaSummaryLabel: String,
+        initialVoiceLogs: List<String>,
+        vinNumber: String,
+        odometerMileage: Long
     ) -> Unit,
+    onIdentifyAutomotivePart: (
+        bitmap: Bitmap,
+        partContextHint: String,
+        equipmentName: String,
+        equipmentModel: String,
+        activeSession: DiagnosticSession?
+    ) -> Unit,
+    onClearVisualPartIdState: () -> Unit,
     onToggleRepairStep: (DiagnosticSession, Int) -> Unit,
     onMarkResolved: (DiagnosticSession) -> Unit,
+    onAddVoiceObservation: (DiagnosticSession, String, String, String) -> Unit,
+    onDeleteVoiceObservation: (DiagnosticSession, String) -> Unit,
     onSavePdfReport: (DiagnosticSession, Uri) -> Unit,
     onEmailPdfReport: (DiagnosticSession) -> Unit,
+    onSaveCsvReport: (DiagnosticSession, Uri) -> Unit,
+    onShareCsvReport: (DiagnosticSession) -> Unit,
     onOpenFlowchart: (String) -> Unit,
     onSelectDiagnostic: (String?) -> Unit,
     onClearAiState: () -> Unit,
     onSeedReferenceLibrary: () -> Unit
 ) {
     val context = LocalContext.current
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
     var pendingPdfSaveSession by remember { mutableStateOf<DiagnosticSession?>(null) }
+    var pendingCsvSaveSession by remember { mutableStateOf<DiagnosticSession?>(null) }
+    var highlightedSectionTarget by remember { mutableStateOf<RepairGuideSectionTarget?>(null) }
+    var highlightedRepairStepNumber by remember { mutableStateOf<Int?>(null) }
+    var highlightedPartName by remember { mutableStateOf<String?>(null) }
 
     val createPdfDocumentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/pdf")
@@ -147,6 +189,16 @@ fun DiagnoseLabScreen(
         pendingPdfSaveSession = null
     }
 
+    val createCsvDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { targetUri: Uri? ->
+        val sessionToSave = pendingCsvSaveSession
+        if (targetUri != null && sessionToSave != null) {
+            onSaveCsvReport(sessionToSave, targetUri)
+        }
+        pendingCsvSaveSession = null
+    }
+
     var selectedCategory by remember(preselectedEquipment) {
         mutableStateOf(
             preselectedEquipment?.let { SystemCategory.fromLabel(it.systemCategory) }
@@ -154,16 +206,31 @@ fun DiagnoseLabScreen(
         )
     }
     var equipmentName by remember(preselectedEquipment) {
-        mutableStateOf(preselectedEquipment?.name ?: "Siemens SIMATIC S7-1500 PLC")
+        mutableStateOf(preselectedEquipment?.name ?: "2021 Ford F-150 3.5L EcoBoost")
     }
     var equipmentModel by remember(preselectedEquipment) {
-        mutableStateOf(preselectedEquipment?.modelNumber ?: "6ES7515-2AM02-0AB0")
+        mutableStateOf(preselectedEquipment?.modelNumber ?: "F150-35EB-PCM")
     }
     var selectedEnvironment by remember(preselectedEquipment) {
-        mutableStateOf(preselectedEquipment?.environmentType ?: EnvironmentPreset.MANUFACTURING.label)
+        mutableStateOf(preselectedEquipment?.environmentType ?: EnvironmentPreset.AUTOMOTIVE_SERVICE_BAY.label)
+    }
+    var vinInput by remember {
+        mutableStateOf("1FTFW1E85MFA10492")
+    }
+    var mileageInput by remember {
+        mutableStateOf("58900")
+    }
+    var autoAlertOnDiagnosis by remember {
+        mutableStateOf(true)
     }
     var symptomDescription by remember {
         mutableStateOf("")
+    }
+    var stagedVoiceLogs by remember {
+        mutableStateOf<List<String>>(emptyList())
+    }
+    var unitSystem by remember {
+        mutableStateOf(AutomotiveUnitSystem.METRIC)
     }
 
     // Multimodal Attachments State
@@ -183,6 +250,65 @@ fun DiagnoseLabScreen(
     var acousticSummary by remember { mutableStateOf("") }
     var mediaRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
     var recordedAudioFile by remember { mutableStateOf<File?>(null) }
+
+    val autoNotificationPermLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            val mileageLong = mileageInput.filter { it.isDigit() }.toLongOrNull() ?: 58_900L
+            val eval = ServiceIntervalNotificationManager.evaluateServiceSchedule(
+                vehicleName = equipmentName,
+                vehicleModel = equipmentModel,
+                mileageMiles = mileageLong
+            )
+            ServiceIntervalNotificationManager.postServiceIntervalNotification(
+                context = context,
+                evaluation = eval,
+                vehicleName = equipmentName,
+                vehicleModel = equipmentModel,
+                vin = vinInput.trim()
+            )
+        }
+    }
+
+    fun triggerDiagnosisAndServiceAlert() {
+        val parsedMileage = mileageInput.filter { it.isDigit() }.toLongOrNull() ?: 0L
+        if (autoAlertOnDiagnosis && parsedMileage > 0L) {
+            val eval = ServiceIntervalNotificationManager.evaluateServiceSchedule(
+                vehicleName = equipmentName,
+                vehicleModel = equipmentModel,
+                mileageMiles = parsedMileage
+            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                !ServiceIntervalNotificationManager.hasNotificationPermission(context)
+            ) {
+                autoNotificationPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                ServiceIntervalNotificationManager.postServiceIntervalNotification(
+                    context = context,
+                    evaluation = eval,
+                    vehicleName = equipmentName,
+                    vehicleModel = equipmentModel,
+                    vin = vinInput.trim()
+                )
+            }
+        }
+        onRunDiagnosis(
+            equipmentName,
+            equipmentModel,
+            selectedCategory,
+            selectedEnvironment,
+            symptomDescription,
+            attachedBitmap,
+            attachedMediaBytes,
+            attachedMediaMimeType,
+            acousticSummary,
+            mediaLabel,
+            stagedVoiceLogs,
+            vinInput.trim(),
+            parsedMileage
+        )
+    }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -324,6 +450,7 @@ fun DiagnoseLabScreen(
         ?: diagnosticsList.firstOrNull()
 
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp),
@@ -332,8 +459,8 @@ fun DiagnoseLabScreen(
         item {
             Spacer(modifier = Modifier.height(4.dp))
             SchematicHeroBanner(
-                title = "Multimodal Fault Diagnostic Lab",
-                subtitle = "SPEECH-TO-TEXT • CAMERAX PHOTO/VIDEO • AI REPAIR GUIDES"
+                title = "Automotive Fault Diagnostic Lab",
+                subtitle = "OBD-II & ECU • CAMERAX PHOTO/VIDEO • AI REPAIR GUIDES"
             )
         }
 
@@ -354,12 +481,12 @@ fun DiagnoseLabScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "New Workspace Detected",
+                                text = "New Automotive Garage Detected",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.secondary
                             )
                             Text(
-                                text = "Load 6 reference industrial, PLC controller, server & hydraulic units plus 6 interactive flowcharts.",
+                                text = "Load 6 reference vehicles (EcoBoost, Camry VVT, Silverado ABS, BMW Air Ride, Tesla LV/HV, Civic 1.5T) plus 6 OBD-II flowcharts.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -393,7 +520,7 @@ fun DiagnoseLabScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     Text(
-                        text = "1. Select System Domain & Equipment Model",
+                        text = "1. Select Automotive Subsystem & Vehicle Model",
                         style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -445,7 +572,7 @@ fun DiagnoseLabScreen(
 
                     if (equipmentList.isNotEmpty()) {
                         Text(
-                            text = "Registered Equipment Profiles:",
+                            text = "Registered Garage Vehicles:",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -475,7 +602,7 @@ fun DiagnoseLabScreen(
                         OutlinedTextField(
                             value = equipmentName,
                             onValueChange = { equipmentName = it },
-                            label = { Text("Equipment / Subsystem") },
+                            label = { Text("Year / Make / Model") },
                             singleLine = true,
                             modifier = Modifier
                                 .weight(1f)
@@ -484,7 +611,7 @@ fun DiagnoseLabScreen(
                         OutlinedTextField(
                             value = equipmentModel,
                             onValueChange = { equipmentModel = it },
-                            label = { Text("Exact Model / Serial") },
+                            label = { Text("Engine / Trim / ECU Code") },
                             singleLine = true,
                             modifier = Modifier
                                 .weight(1f)
@@ -492,8 +619,32 @@ fun DiagnoseLabScreen(
                         )
                     }
 
+                    // VIN Decoder (NHTSA vPIC API) + Odometer Mileage & Local Service Interval Notifications
+                    VinAndMileageServicePanel(
+                        vinInput = vinInput,
+                        onVinInputChange = { vinInput = it },
+                        mileageInput = mileageInput,
+                        onMileageInputChange = { mileageInput = it },
+                        vehicleName = equipmentName,
+                        vehicleModel = equipmentModel,
+                        autoAlertOnDiagnosis = autoAlertOnDiagnosis,
+                        onAutoAlertOnDiagnosisChange = { autoAlertOnDiagnosis = it },
+                        onVinDecoded = { decoded ->
+                            equipmentName = decoded.formattedVehicleName
+                            equipmentModel = decoded.formattedModelCode
+                            selectedEnvironment = decoded.recommendedEnvironment
+                        },
+                        onAppendServiceNoteToSymptom = { serviceNote ->
+                            symptomDescription = if (symptomDescription.isBlank()) {
+                                serviceNote
+                            } else {
+                                "${symptomDescription.trimEnd()}\n$serviceNote"
+                            }
+                        }
+                    )
+
                     Text(
-                        text = "Operating Environment:",
+                        text = "Driving / Service Environment:",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -549,6 +700,89 @@ fun DiagnoseLabScreen(
                         }
                     }
 
+                    ObdBleScannerBannerCard(
+                        unitSystem = unitSystem,
+                        onUnitSystemChange = { unitSystem = it },
+                        onInjectObdTelemetry = { obdPrompt, telemetryLabel, detectedCat, detectedVehicle ->
+                            symptomDescription = if (symptomDescription.isBlank()) {
+                                obdPrompt
+                            } else {
+                                "${symptomDescription.trimEnd()}\n\n$obdPrompt"
+                            }
+                            mediaLabel = telemetryLabel
+                            if (detectedCat != null) {
+                                selectedCategory = detectedCat
+                            }
+                            if (!detectedVehicle.isNullOrBlank()) {
+                                equipmentName = detectedVehicle
+                            }
+                        }
+                    )
+
+                    // Built-in Automotive Unit Converter Utility (Torque, Pressure & Temperature Metric/Imperial)
+                    AutomotiveUnitConverterCard(
+                        unitSystem = unitSystem,
+                        onUnitSystemChange = { unitSystem = it },
+                        onAppendConvertedNoteToPrompt = { convertedSpecNote ->
+                            symptomDescription = if (symptomDescription.isBlank()) {
+                                convertedSpecNote
+                            } else {
+                                "${symptomDescription.trimEnd()}\n$convertedSpecNote"
+                            }
+                        }
+                    )
+
+                    // AI-Powered Visual Automotive Part Identification with CameraX & Direct Repair Guide Section Links
+                    VisualPartIdentifierCard(
+                        partIdState = visualPartIdState,
+                        hasActiveRepairGuide = activeSession != null,
+                        activeHighlightedSection = highlightedSectionTarget,
+                        onIdentifyPartBitmap = { bmp, hint ->
+                            attachedBitmap = bmp
+                            mediaLabel = "AI Part Scan: $hint"
+                            onIdentifyAutomotivePart(
+                                bmp,
+                                hint,
+                                equipmentName,
+                                equipmentModel,
+                                activeSession
+                            )
+                        },
+                        onJumpToRepairGuideSection = { sectionTarget, stepNumber, identifiedPart ->
+                            highlightedSectionTarget = sectionTarget
+                            highlightedRepairStepNumber = stepNumber
+                            highlightedPartName = identifiedPart.partName
+                            selectedCategory = identifiedPart.subsystemCategory
+                            if (activeSession != null) {
+                                coroutineScope.launch {
+                                    val targetIdx = (listState.layoutInfo.totalItemsCount - 2).coerceAtLeast(0)
+                                    listState.animateScrollToItem(targetIdx)
+                                }
+                            } else {
+                                symptomDescription = identifiedPart.recommendedDiagnosticPrompt
+                                triggerDiagnosisAndServiceAlert()
+                            }
+                        },
+                        onGenerateRepairGuideForPart = { identifiedPart, partBmp ->
+                            selectedCategory = identifiedPart.subsystemCategory
+                            symptomDescription = identifiedPart.recommendedDiagnosticPrompt
+                            if (partBmp != null) {
+                                attachedBitmap = partBmp
+                            }
+                            mediaLabel = "AI Visual Part ID: ${identifiedPart.partName} (${identifiedPart.oemPartNumberPattern})"
+                            highlightedSectionTarget = identifiedPart.primarySectionTarget
+                            highlightedRepairStepNumber = identifiedPart.matchedRepairStepNumber
+                            highlightedPartName = identifiedPart.partName
+                            triggerDiagnosisAndServiceAlert()
+                        },
+                        onClearPartIdState = {
+                            highlightedSectionTarget = null
+                            highlightedRepairStepNumber = null
+                            highlightedPartName = null
+                            onClearVisualPartIdState()
+                        }
+                    )
+
                     HandsFreeSpeechRecognizerCard(
                         onTextRecognized = { spokenText ->
                             symptomDescription = if (symptomDescription.isBlank()) {
@@ -557,6 +791,15 @@ fun DiagnoseLabScreen(
                                 val separator = if (symptomDescription.trimEnd().endsWith(".")) " " else ". "
                                 "${symptomDescription.trimEnd()}$separator$spokenText"
                             }
+                            val timeFmt = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+                            val voiceLog = MechanicVoiceObservation(
+                                id = "vn_${System.currentTimeMillis()}",
+                                timestampLabel = timeFmt.format(java.util.Date()),
+                                stepTag = "INITIAL INSPECTION",
+                                categoryTag = "OBSERVATION",
+                                transcript = spokenText
+                            ).toEncodedString()
+                            stagedVoiceLogs = (stagedVoiceLogs + voiceLog).takeLast(20)
                         },
                         onVoiceCommand = { rawSpoken ->
                             val normalized = rawSpoken.trim().lowercase()
@@ -564,24 +807,14 @@ fun DiagnoseLabScreen(
                                 normalized == "run diagnosis" ||
                                     normalized == "start diagnosis" ||
                                     normalized == "diagnose now" -> {
-                                    onRunDiagnosis(
-                                        equipmentName,
-                                        equipmentModel,
-                                        selectedCategory,
-                                        selectedEnvironment,
-                                        symptomDescription,
-                                        attachedBitmap,
-                                        attachedMediaBytes,
-                                        attachedMediaMimeType,
-                                        acousticSummary,
-                                        mediaLabel
-                                    )
+                                    triggerDiagnosisAndServiceAlert()
                                     true
                                 }
                                 normalized == "clear prompt" ||
                                     normalized == "clear description" ||
                                     normalized == "reset prompt" -> {
                                     symptomDescription = ""
+                                    stagedVoiceLogs = emptyList()
                                     true
                                 }
                                 else -> false
@@ -962,18 +1195,7 @@ fun DiagnoseLabScreen(
 
                     Button(
                         onClick = {
-                            onRunDiagnosis(
-                                equipmentName,
-                                equipmentModel,
-                                selectedCategory,
-                                selectedEnvironment,
-                                symptomDescription,
-                                attachedBitmap,
-                                attachedMediaBytes,
-                                attachedMediaMimeType,
-                                acousticSummary,
-                                mediaLabel
-                            )
+                            triggerDiagnosisAndServiceAlert()
                         },
                         enabled = aiTaskState !is AiTaskState.Running,
                         modifier = Modifier
@@ -1004,9 +1226,23 @@ fun DiagnoseLabScreen(
                 ActiveRepairGuideCard(
                     session = activeSession,
                     allSessions = diagnosticsList,
+                    highlightedSection = highlightedSectionTarget,
+                    highlightedStepNumber = highlightedRepairStepNumber,
+                    highlightedPartName = highlightedPartName,
+                    onClearSectionHighlight = {
+                        highlightedSectionTarget = null
+                        highlightedRepairStepNumber = null
+                        highlightedPartName = null
+                    },
                     onSelectSession = onSelectDiagnostic,
                     onToggleStep = { idx -> onToggleRepairStep(activeSession, idx) },
                     onMarkResolved = { onMarkResolved(activeSession) },
+                    onAddVoiceObservation = { stepTag, catTag, text ->
+                        onAddVoiceObservation(activeSession, stepTag, catTag, text)
+                    },
+                    onDeleteVoiceObservation = { obsId ->
+                        onDeleteVoiceObservation(activeSession, obsId)
+                    },
                     onSavePdf = {
                         pendingPdfSaveSession = activeSession
                         createPdfDocumentLauncher.launch(
@@ -1015,6 +1251,15 @@ fun DiagnoseLabScreen(
                     },
                     onEmailPdf = {
                         onEmailPdfReport(activeSession)
+                    },
+                    onSaveCsv = {
+                        pendingCsvSaveSession = activeSession
+                        createCsvDocumentLauncher.launch(
+                            DiagnosticCsvExporter.buildSuggestedSingleFileName(activeSession)
+                        )
+                    },
+                    onShareCsv = {
+                        onShareCsvReport(activeSession)
                     }
                 )
             }
@@ -1031,11 +1276,19 @@ fun DiagnoseLabScreen(
 private fun ActiveRepairGuideCard(
     session: DiagnosticSession,
     allSessions: List<DiagnosticSession>,
+    highlightedSection: RepairGuideSectionTarget?,
+    highlightedStepNumber: Int?,
+    highlightedPartName: String?,
+    onClearSectionHighlight: () -> Unit,
     onSelectSession: (String) -> Unit,
     onToggleStep: (Int) -> Unit,
     onMarkResolved: () -> Unit,
+    onAddVoiceObservation: (String, String, String) -> Unit,
+    onDeleteVoiceObservation: (String) -> Unit,
     onSavePdf: () -> Unit,
-    onEmailPdf: () -> Unit
+    onEmailPdf: () -> Unit,
+    onSaveCsv: () -> Unit,
+    onShareCsv: () -> Unit
 ) {
     val totalSteps = session.repairSteps.size.coerceAtLeast(1)
     val completedCount = session.completedStepIndices.size
@@ -1045,10 +1298,11 @@ private fun ActiveRepairGuideCard(
         modifier = Modifier
             .fillMaxWidth()
             .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                width = if (highlightedSection != null) 2.dp else 1.dp,
+                color = if (highlightedSection != null) SignalEmerald else MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
                 shape = RoundedCornerShape(16.dp)
-            ),
+            )
+            .testTag("active_repair_guide_card"),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         )
@@ -1057,6 +1311,59 @@ private fun ActiveRepairGuideCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            if (highlightedSection != null) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = SignalEmerald.copy(alpha = 0.16f)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, SignalEmerald, RoundedCornerShape(10.dp))
+                        .testTag("repair_guide_part_link_banner")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CenterFocusStrong,
+                                contentDescription = "Linked from AI Visual Part Identifier",
+                                tint = SignalEmerald,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "DEEP-LINKED FROM AI PART ID: ${highlightedPartName ?: "Automotive Component"}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = SignalEmerald,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Highlighting Section: ${highlightedSection.label}" +
+                                        (if (highlightedStepNumber != null) " (Step #$highlightedStepNumber)" else ""),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        IconButton(onClick = onClearSectionHighlight) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear Deep-Link Highlight"
+                            )
+                        }
+                    }
+                }
+            }
+
             if (allSessions.size > 1) {
                 Text(
                     text = "Recent Diagnostic Reports:",
@@ -1102,6 +1409,22 @@ private fun ActiveRepairGuideCard(
                 color = MaterialTheme.colorScheme.primary
             )
 
+            if (session.vinNumber.isNotBlank() || session.odometerMileage > 0L) {
+                val numberFmt = remember { NumberFormat.getIntegerInstance(Locale.US) }
+                val vinPart = if (session.vinNumber.isNotBlank()) "VIN: ${session.vinNumber}" else null
+                val mileagePart = if (session.odometerMileage > 0L) {
+                    "Odometer: ${numberFmt.format(session.odometerMileage)} mi"
+                } else {
+                    null
+                }
+                Text(
+                    text = listOfNotNull(vinPart, mileagePart).joinToString("  •  "),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = ElectricCyan,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
             Text(
                 text = session.technicalAnalysis,
                 style = MaterialTheme.typography.bodyMedium,
@@ -1109,11 +1432,24 @@ private fun ActiveRepairGuideCard(
             )
 
             if (session.safetyWarnings.isNotEmpty()) {
+                val isSafetyHighlighted = highlightedSection == RepairGuideSectionTarget.SAFETY_PRECAUTIONS
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = SafetyAmber.copy(alpha = 0.14f)
+                        containerColor = if (isSafetyHighlighted) {
+                            SafetyAmber.copy(alpha = 0.25f)
+                        } else {
+                            SafetyAmber.copy(alpha = 0.14f)
+                        }
                     ),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (isSafetyHighlighted) {
+                                Modifier.border(2.dp, SafetyAmber, RoundedCornerShape(12.dp))
+                            } else {
+                                Modifier
+                            }
+                        )
                 ) {
                     Column(
                         modifier = Modifier.padding(12.dp),
@@ -1128,7 +1464,7 @@ private fun ActiveRepairGuideCard(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "LOCKOUT / TAGOUT & SAFETY PRECAUTIONS",
+                                text = "VEHICLE LIFT, JACK STAND & SHOP SAFETY PRECAUTIONS",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = SafetyAmber,
                                 fontWeight = FontWeight.Bold
@@ -1146,11 +1482,27 @@ private fun ActiveRepairGuideCard(
             }
 
             if (session.requiredTools.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                val isToolsHighlighted = highlightedSection == RepairGuideSectionTarget.REQUIRED_TOOLS
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (isToolsHighlighted) {
+                                Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(ElectricCyan.copy(alpha = 0.12f))
+                                    .border(2.dp, ElectricCyan, RoundedCornerShape(10.dp))
+                                    .padding(10.dp)
+                            } else {
+                                Modifier
+                            }
+                        ),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     Text(
                         text = "Required Tools, Test Instruments & Parts:",
                         style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.secondary
+                        color = if (isToolsHighlighted) ElectricCyan else MaterialTheme.colorScheme.secondary
                     )
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1202,13 +1554,26 @@ private fun ActiveRepairGuideCard(
 
             session.repairSteps.forEachIndexed { index, stepText ->
                 val isDone = session.completedStepIndices.contains(index.toLong())
+                val isStepDeepLinked =
+                    highlightedSection == RepairGuideSectionTarget.REPAIR_STEPS &&
+                        highlightedStepNumber == (index + 1)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
                         .background(
-                            if (isDone) SignalEmerald.copy(alpha = 0.1f)
-                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                            when {
+                                isStepDeepLinked -> SignalEmerald.copy(alpha = 0.22f)
+                                isDone -> SignalEmerald.copy(alpha = 0.1f)
+                                else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                            }
+                        )
+                        .then(
+                            if (isStepDeepLinked) {
+                                Modifier.border(2.dp, SignalEmerald, RoundedCornerShape(10.dp))
+                            } else {
+                                Modifier
+                            }
                         )
                         .clickable(enabled = session.status != "RESOLVED") {
                             onToggleStep(index)
@@ -1226,9 +1591,14 @@ private fun ActiveRepairGuideCard(
                     Spacer(modifier = Modifier.width(6.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "STEP ${index + 1}",
+                            text = if (isStepDeepLinked) {
+                                "STEP ${index + 1} • LINKED TO IDENTIFIED PART (${highlightedPartName?.take(26) ?: "MATCH"})"
+                            } else {
+                                "STEP ${index + 1}"
+                            },
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (isDone) SignalEmerald else ElectricCyan
+                            color = if (isDone || isStepDeepLinked) SignalEmerald else ElectricCyan,
+                            fontWeight = if (isStepDeepLinked) FontWeight.Bold else FontWeight.Normal
                         )
                         Text(
                             text = stepText,
@@ -1240,17 +1610,31 @@ private fun ActiveRepairGuideCard(
             }
 
             if (session.verificationTest.isNotBlank()) {
+                val isVerifyHighlighted = highlightedSection == RepairGuideSectionTarget.VERIFICATION_TEST
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = ElectricCyan.copy(alpha = 0.1f)
+                        containerColor = if (isVerifyHighlighted) {
+                            ElectricCyan.copy(alpha = 0.22f)
+                        } else {
+                            ElectricCyan.copy(alpha = 0.1f)
+                        }
                     ),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (isVerifyHighlighted) {
+                                Modifier.border(2.dp, ElectricCyan, RoundedCornerShape(12.dp))
+                            } else {
+                                Modifier
+                            }
+                        )
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(
                             text = "POST-REPAIR VERIFICATION TEST",
                             style = MaterialTheme.typography.labelMedium,
-                            color = ElectricCyan
+                            color = ElectricCyan,
+                            fontWeight = if (isVerifyHighlighted) FontWeight.Bold else FontWeight.Normal
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
@@ -1261,6 +1645,16 @@ private fun ActiveRepairGuideCard(
                     }
                 }
             }
+
+            // Microphone-Enabled Voice-to-Text Diagnostic Report Logger
+            DiagnosticReportVoiceLoggerCard(
+                session = session,
+                onLogVoiceObservation = onAddVoiceObservation,
+                onDeleteVoiceObservation = onDeleteVoiceObservation,
+                onToggleRepairStep = onToggleStep,
+                onMarkResolved = onMarkResolved,
+                testTagPrefix = "active_report_voice_logger"
+            )
 
             if (session.status != "RESOLVED") {
                 Button(
@@ -1321,6 +1715,48 @@ private fun ActiveRepairGuideCard(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("Email Service PDF")
+                }
+            }
+
+            // Export Diagnostic Report from Room SQLite to Shop Management System CSV
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = onSaveCsv,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("active_report_save_csv_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.TableChart,
+                        contentDescription = "Save Shop CSV Report",
+                        tint = SignalEmerald,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Save Shop CSV")
+                }
+
+                Button(
+                    onClick = onShareCsv,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("active_report_share_csv_button"),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = SignalEmerald
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Share Shop CSV Report",
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Share Shop CSV")
                 }
             }
         }

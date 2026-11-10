@@ -1,15 +1,16 @@
 <resources>
     <string name="app_name">MechSight</string>
-    <string name="auth_title">MechSight Field Diagnostics</string>
-    <string name="auth_subtitle">Multimodal failure analysis, interactive decision flowcharts, and model-specific repair guides across Mechanical, Electrical, Hydraulic, Pneumatic, Computer Controller, and Computer systems.</string>
+    <string name="auth_title">MechSight Automotive Diagnostics</string>
+    <string name="auth_subtitle">Multimodal vehicle failure analysis, interactive OBD-II &amp; subsystem decision flowcharts, and model-specific automotive repair guides across Mechanical, Electrical, Hydraulic, Pneumatic, and ECU Controller systems.</string>
     <string name="sign_in_google">Sign in with Google</string>
     <string name="sign_out">Sign Out</string>
     <string name="nav_diagnose">Diagnose</string>
     <string name="nav_flowcharts">Flowcharts</string>
-    <string name="nav_equipment">Equipment</string>
-    <string name="nav_history">Repair Log</string>
-    <string name="hero_badge">MULTIMODAL ENGINEERING DIAGNOSTICS</string>
-    <string name="btn_run_diagnosis">Run Multimodal AI Diagnosis</string>
-    <string name="btn_generate_flowchart">Generate AI Troubleshooting Flowchart</string>
-    <string name="btn_seed_starter_kit">Load Reference Equipment &amp; Flowcharts</string>
+    <string name="nav_equipment">Garage</string>
+    <string name="nav_history">Service Log</string>
+    <string name="nav_analytics">Analytics</string>
+    <string name="hero_badge">AUTOMOTIVE MULTIMODAL DIAGNOSTICS</string>
+    <string name="btn_run_diagnosis">Run Automotive AI Diagnosis</string>
+    <string name="btn_generate_flowchart">Generate Automotive Troubleshooting Flowchart</string>
+    <string name="btn_seed_starter_kit">Load Reference Vehicles &amp; Flowcharts</string>
 </resources>

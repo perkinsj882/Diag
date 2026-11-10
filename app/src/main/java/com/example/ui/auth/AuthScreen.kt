@@ -2,6 +2,7 @@ package com.example.ui.auth
 
 import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,10 +26,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -36,6 +39,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -62,6 +66,8 @@ import androidx.credentials.exceptions.GetCredentialCancellationException
 import com.example.R
 import com.example.data.model.SystemCategory
 import com.example.ui.components.SchematicHeroBanner
+import com.example.ui.theme.ElectricCyan
+import com.example.ui.theme.SafetyAmber
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -72,6 +78,12 @@ import com.google.firebase.auth.auth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 fun attemptAutoSignIn(
     context: Context,
@@ -101,7 +113,8 @@ fun attemptAutoSignIn(
 
     scope.launch {
         try {
-            val result = credentialManager.getCredential(context, request)
+            val activityContext = context.findActivity() ?: context
+            val result = credentialManager.getCredential(activityContext, request)
             val credential = result.credential
             if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                 val googleIdToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
@@ -133,12 +146,26 @@ fun onGoogleSignInClicked(
     }
 
     val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId).build()
-    val request = GetCredentialRequest.Builder().addCredentialOption(signInOption).build()
+    val primaryRequest = GetCredentialRequest.Builder().addCredentialOption(signInOption).build()
 
     scope.launch {
+        val activityContext = context.findActivity() ?: context
         try {
-            val activityContext = context as? Activity ?: context
-            val result = credentialManager.getCredential(activityContext, request)
+            val result = try {
+                credentialManager.getCredential(activityContext, primaryRequest)
+            } catch (primaryErr: Exception) {
+                if (primaryErr is GetCredentialCancellationException) throw primaryErr
+                // Fallback to GetGoogleIdOption with filterByAuthorizedAccounts = false
+                val fallbackOption = GetGoogleIdOption.Builder()
+                    .setFilterByAuthorizedAccounts(false)
+                    .setServerClientId(clientId)
+                    .build()
+                val fallbackRequest = GetCredentialRequest.Builder()
+                    .addCredentialOption(fallbackOption)
+                    .build()
+                credentialManager.getCredential(activityContext, fallbackRequest)
+            }
+
             val credential = result.credential
             if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                 val googleIdToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
@@ -153,7 +180,9 @@ fun onGoogleSignInClicked(
             onAuthCancelled()
         } catch (e: Exception) {
             Log.e("Auth", "Google Sign-In failed", e)
-            onAuthError(e.localizedMessage ?: "Sign in failed")
+            onAuthError(
+                "Google Sign-In unavailable on this device/network (${e.localizedMessage ?: "No Google account"}). Use 'Continue with Local Room Database (Offline Mode)' below to access all features."
+            )
         }
     }
 }
@@ -179,7 +208,8 @@ fun signOutUser(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AuthScreen(
-    onAuthSuccess: () -> Unit
+    onAuthSuccess: () -> Unit,
+    onEnterOfflineRoomMode: () -> Unit = onAuthSuccess
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -221,11 +251,11 @@ fun AuthScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(20.dp)
+                verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
                 SchematicHeroBanner(
                     title = stringResource(R.string.auth_title),
-                    subtitle = stringResource(R.string.hero_badge)
+                    subtitle = "ROOM SQLITE OFFLINE DB • RECHARTS ANALYTICS • AI GUIDES"
                 )
 
                 Text(
@@ -272,23 +302,23 @@ fun AuthScreen(
                     ) {
                         FeatureRow(
                             icon = Icons.Default.GraphicEq,
-                            title = "Multimodal Fault Analysis",
-                            desc = "Combine text symptoms, photos, video frames, and live acoustic audio recordings."
+                            title = "Multimodal & Hands-Free Voice Diagnostics",
+                            desc = "Narrate observations hands-free via SpeechRecognizer, capture CameraX photos/videos, and record acoustic audio."
+                        )
+                        FeatureRow(
+                            icon = Icons.Default.Storage,
+                            title = "Room Local SQLite + Cloud Sync",
+                            desc = "Store diagnostic reports, repair checklists, and flowcharts locally on-device via Room for full offline access."
+                        )
+                        FeatureRow(
+                            icon = Icons.Default.BarChart,
+                            title = "Reliability & MTTR Analytics Dashboard",
+                            desc = "Visualize machine fault frequencies, severity distributions, and average repair times across all equipment."
                         )
                         FeatureRow(
                             icon = Icons.Default.AccountTree,
-                            title = "Interactive Decision Flowcharts",
-                            desc = "Step through conditional Yes/No diagnostic branches to isolate root causes fast."
-                        )
-                        FeatureRow(
-                            icon = Icons.Default.Memory,
-                            title = "Controllers, Computers & Heavy Systems",
-                            desc = "Tailored guides for PLCs, ECUs, servers, hydraulics, pneumatics, electrical & mechanical."
-                        )
-                        FeatureRow(
-                            icon = Icons.Default.Build,
-                            title = "Model-Specific Repair Checklists",
-                            desc = "Cloud-synced LOTO safety alerts, required tools, torque/pressure specs & verification."
+                            title = "Interactive Decision Flowcharts & PDF Export",
+                            desc = "Step through Yes/No fault isolation trees and export formatted PDF service reports."
                         )
                     }
                 }
@@ -299,15 +329,19 @@ fun AuthScreen(
                             .fillMaxWidth()
                             .testTag("auth_error_banner"),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
+                            containerColor = SafetyAmber.copy(alpha = 0.16f)
                         )
                     ) {
-                        Text(
-                            text = errorMessage!!,
+                        Column(
                             modifier = Modifier.padding(12.dp),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = errorMessage!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
 
@@ -335,7 +369,7 @@ fun AuthScreen(
                     enabled = !isLoading,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(54.dp)
+                        .height(52.dp)
                         .testTag("google_sign_in_button"),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
@@ -362,6 +396,27 @@ fun AuthScreen(
                             style = MaterialTheme.typography.labelLarge
                         )
                     }
+                }
+
+                OutlinedButton(
+                    onClick = onEnterOfflineRoomMode,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                        .testTag("continue_offline_room_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Storage,
+                        contentDescription = "Continue with Local Room Database",
+                        tint = ElectricCyan,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Continue with Local Room Database (Offline Mode)",
+                        color = ElectricCyan,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }

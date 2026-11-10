@@ -75,8 +75,8 @@ fun EquipmentFleetScreen(
     var name by remember { mutableStateOf("") }
     var modelNumber by remember { mutableStateOf("") }
     var category by remember { mutableStateOf(SystemCategory.COMPUTER_CONTROLLER) }
-    var environment by remember { mutableStateOf(EnvironmentPreset.MANUFACTURING.label) }
-    var hoursText by remember { mutableStateOf("1200") }
+    var environment by remember { mutableStateOf(EnvironmentPreset.AUTOMOTIVE_SERVICE_BAY.label) }
+    var hoursText by remember { mutableStateOf("1850") }
     var notes by remember { mutableStateOf("") }
 
     LazyColumn(
@@ -94,12 +94,12 @@ fun EquipmentFleetScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Equipment Registry & Repair Logs",
+                        text = "Automotive Garage & Service Logs",
                         style = MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Manage models across all 6 domains & review historical repair guides.",
+                        text = "Manage vehicle models across all 5 automotive domains & review repair guides.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -110,11 +110,11 @@ fun EquipmentFleetScreen(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
-                        contentDescription = "Register Equipment",
+                        contentDescription = "Register Vehicle",
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(if (showAddForm) "Close" else "Add Model")
+                    Text(if (showAddForm) "Close" else "Add Vehicle")
                 }
             }
         }
@@ -134,7 +134,7 @@ fun EquipmentFleetScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            text = "Register Equipment, Controller, or Computer Asset",
+                            text = "Register Vehicle or Automotive Subsystem",
                             style = MaterialTheme.typography.titleMedium,
                             color = ElectricCyan
                         )
@@ -159,7 +159,7 @@ fun EquipmentFleetScreen(
                             OutlinedTextField(
                                 value = name,
                                 onValueChange = { name = it },
-                                label = { Text("Asset Name") },
+                                label = { Text("Year / Make / Model") },
                                 singleLine = true,
                                 modifier = Modifier
                                     .weight(1f)
@@ -168,7 +168,7 @@ fun EquipmentFleetScreen(
                             OutlinedTextField(
                                 value = modelNumber,
                                 onValueChange = { modelNumber = it },
-                                label = { Text("Model / Part #") },
+                                label = { Text("Engine / ECU / VIN Code") },
                                 singleLine = true,
                                 modifier = Modifier
                                     .weight(1f)
@@ -196,7 +196,7 @@ fun EquipmentFleetScreen(
                             OutlinedTextField(
                                 value = hoursText,
                                 onValueChange = { hoursText = it.filter { ch -> ch.isDigit() } },
-                                label = { Text("Operating Hours") },
+                                label = { Text("Engine Hours") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 singleLine = true,
                                 modifier = Modifier.weight(0.4f)
@@ -204,7 +204,7 @@ fun EquipmentFleetScreen(
                             OutlinedTextField(
                                 value = notes,
                                 onValueChange = { notes = it },
-                                label = { Text("Firmware / Fluid / Spec Notes") },
+                                label = { Text("Transmission / Oil / Spec Notes") },
                                 singleLine = true,
                                 modifier = Modifier.weight(0.6f)
                             )
@@ -229,7 +229,7 @@ fun EquipmentFleetScreen(
                                 .fillMaxWidth()
                                 .testTag("save_equipment_button")
                         ) {
-                            Text("Save Equipment Profile")
+                            Text("Save Vehicle Profile")
                         }
                     }
                 }
@@ -250,16 +250,16 @@ fun EquipmentFleetScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Text(
-                            text = "No Equipment Profiles Registered",
+                            text = "No Vehicles Registered in Garage",
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            text = "Load reference equipment across Mechanical, Electrical, Hydraulic, Pneumatic, Computer Controller, and Computer categories.",
+                            text = "Load reference vehicles across Engine & Powertrain, Brakes, Steering & Suspension, Battery & Charging, and ECU & CAN-Bus categories.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Button(onClick = onSeedReferenceLibrary) {
-                            Text("Load Reference Fleet")
+                            Text("Load Reference Vehicles")
                         }
                     }
                 }

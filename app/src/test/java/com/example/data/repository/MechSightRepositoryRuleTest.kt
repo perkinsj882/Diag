@@ -23,12 +23,12 @@ class MechSightRepositoryRuleTest : FirestoreEmulatorTestBase() {
 
         val eqId = withTimeout(DEFAULT_TIMEOUT_MS) {
             repository.createEquipment(
-                name = "Siemens S7-1500 PLC",
-                modelNumber = "6ES7511-1AK02-0AB0",
+                name = "2021 Ford F-150 3.5L EcoBoost PCM",
+                modelNumber = "F150-35EB-PCM",
                 systemCategory = SystemCategory.COMPUTER_CONTROLLER.label,
-                environmentType = "Manufacturing Floor",
-                operatingHours = 3200L,
-                notes = "Main assembly cell PLC"
+                environmentType = "Automotive Service Bay",
+                operatingHours = 1840L,
+                notes = "High-Speed CAN-Bus & 10R80 TCM"
             ).getOrThrow()
         }
         assertTrue(eqId.isNotEmpty())
@@ -47,19 +47,19 @@ class MechSightRepositoryRuleTest : FirestoreEmulatorTestBase() {
         val diagId = withTimeout(DEFAULT_TIMEOUT_MS) {
             repository.createDiagnosticSession(
                 DiagnosticSession(
-                    equipmentName = "Dell PowerEdge R750",
-                    equipmentModel = "PER750-NVME",
-                    systemCategory = SystemCategory.COMPUTER.label,
-                    environmentType = "Data Center / Server Room",
-                    symptomDescription = "Server halts with WHEA PCIe bus fatal error under load",
-                    attachedMediaSummary = "Photo of iDRAC screen attached",
-                    rootCauseTitle = "PCIe Riser Seating & VRM Thermal Degradation",
+                    equipmentName = "2020 Toyota Camry 2.5L VVT-iE",
+                    equipmentModel = "A25A-FKS-DOHC",
+                    systemCategory = SystemCategory.MECHANICAL.label,
+                    environmentType = "Street & Highway Commute",
+                    symptomDescription = "Cold-start VVT cam phaser rattle and P0016 correlation code",
+                    attachedMediaSummary = "CameraX photo of timing cover attached",
+                    rootCauseTitle = "Worn VVT Intake Cam Phaser Locking Pin",
                     severity = "CRITICAL",
                     confidencePercent = 93L,
-                    technicalAnalysis = "PCIe lane retraining errors on Riser 1.",
-                    safetyWarnings = listOf("Wear ESD wrist strap before opening chassis"),
-                    requiredTools = listOf("Torx T15 driver", "ESD mat"),
-                    repairSteps = listOf("Power down server and disconnect PSU cords", "Reseat PCIe Riser 1")
+                    technicalAnalysis = "Un-damped camshaft phase oscillation during cold cranking.",
+                    safetyWarnings = listOf("Support vehicle on jack stands and chock wheels"),
+                    requiredTools = listOf("OBD-II scan tool", "Torque wrench"),
+                    repairSteps = listOf("Set Cylinder 1 to TDC Compression", "Replace VVT intake cam phaser")
                 )
             ).getOrThrow()
         }

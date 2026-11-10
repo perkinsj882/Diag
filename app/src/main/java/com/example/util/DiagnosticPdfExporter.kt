@@ -84,15 +84,18 @@ object DiagnosticPdfExporter {
             "Service Record [${session.status}]: ${session.equipmentName} (${session.equipmentModel}) - ${session.rootCauseTitle}"
 
         val emailBody = buildString {
-            appendLine("MECHSIGHT EQUIPMENT DIAGNOSTIC & MAINTENANCE SERVICE RECORD")
-            appendLine("===========================================================")
+            appendLine("MECHSIGHT AUTOMOTIVE DIAGNOSTIC & MAINTENANCE SERVICE RECORD")
+            appendLine("============================================================")
             appendLine("Session ID: ${session.id.ifBlank { "LOCAL-RECORD" }}")
             appendLine("Status: ${session.status} ($completedSteps of $totalSteps repair steps completed)")
-            appendLine("Equipment: ${session.equipmentName} (Model: ${session.equipmentModel})")
-            appendLine("System Domain: ${session.systemCategory} | Environment: ${session.environmentType}")
+            appendLine("Vehicle / Subsystem: ${session.equipmentName} (Model: ${session.equipmentModel})")
+            if (session.vinNumber.isNotBlank() || session.odometerMileage > 0L) {
+                appendLine("VIN: ${session.vinNumber.ifBlank { "N/A" }} | Odometer Mileage: ${if (session.odometerMileage > 0L) "${session.odometerMileage} mi" else "N/A"}")
+            }
+            appendLine("Subsystem Domain: ${session.systemCategory} | Environment: ${session.environmentType}")
             appendLine("Primary Root Cause: ${session.rootCauseTitle} (${session.severity} - ${session.confidencePercent}% Confidence)")
             appendLine()
-            appendLine("Reported Symptom:")
+            appendLine("Reported Symptom / OBD-II DTC:")
             appendLine(session.symptomDescription)
             appendLine()
             appendLine("Technical Failure Analysis:")
@@ -100,8 +103,16 @@ object DiagnosticPdfExporter {
             appendLine()
             appendLine("Post-Repair Verification Test:")
             appendLine(session.verificationTest)
+            val voiceNotes = session.parsedVoiceObservations()
+            if (voiceNotes.isNotEmpty()) {
+                appendLine()
+                appendLine("Mechanic Voice-to-Text Field Observations (${voiceNotes.size}):")
+                voiceNotes.forEach { obs ->
+                    appendLine("• [${obs.timestampLabel}] [${obs.stepTag} | ${obs.categoryTag}] ${obs.transcript}")
+                }
+            }
             appendLine()
-            appendLine("Please find the complete formatted PDF Service Report attached for the equipment maintenance log.")
+            appendLine("Please find the complete formatted PDF Automotive Service Report attached for the vehicle maintenance log.")
         }
 
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -248,7 +259,7 @@ object DiagnosticPdfExporter {
             )
             canvas.drawRoundRect(bannerRect, 8f, 8f, headerFillPaint)
             canvas.drawText(
-                "MECHSIGHT EQUIPMENT DIAGNOSTIC & SERVICE REPORT",
+                "MECHSIGHT AUTOMOTIVE DIAGNOSTIC & SERVICE REPORT",
                 MARGIN_HORIZONTAL + 14f,
                 cursorY + 24f,
                 titleWhitePaint
@@ -318,9 +329,14 @@ object DiagnosticPdfExporter {
                 cursorY + 54f,
                 resolvedBadgePaint
             )
-            if (session.attachedMediaSummary.isNotBlank()) {
+            if (session.vinNumber.isNotBlank() || session.odometerMileage > 0L || session.attachedMediaSummary.isNotBlank()) {
+                val extraMeta = buildList {
+                    if (session.vinNumber.isNotBlank()) add("VIN: ${session.vinNumber}")
+                    if (session.odometerMileage > 0L) add("ODOMETER: ${session.odometerMileage} MI")
+                    if (session.attachedMediaSummary.isNotBlank()) add("EVIDENCE: ${session.attachedMediaSummary.take(45)}")
+                }.joinToString("  |  ")
                 canvas.drawText(
-                    "EVIDENCE ANALYZED: ${session.attachedMediaSummary.take(85)}",
+                    extraMeta.take(95),
                     MARGIN_HORIZONTAL + 12f,
                     cursorY + 69f,
                     monoSmallPaint
@@ -367,9 +383,9 @@ object DiagnosticPdfExporter {
             drawWrappedParagraph(session.technicalAnalysis, bodyRegularPaint)
             cursorY += 10f
 
-            // 4. Safety & Lockout/Tagout (LOTO) Warnings
+            // 4. Vehicle Lift, Battery & Shop Safety Warnings
             if (session.safetyWarnings.isNotEmpty()) {
-                drawSectionHeader("2. SAFETY, LOTO & PPE PRECAUTIONS")
+                drawSectionHeader("2. VEHICLE LIFT, BATTERY & SHOP SAFETY PRECAUTIONS")
                 for (warning in session.safetyWarnings) {
                     val lines = wrapTextLines("• $warning", bodyBoldPaint, CONTENT_WIDTH - 20f)
                     val boxH = (lines.size * 13.5f) + 12f
@@ -426,9 +442,29 @@ object DiagnosticPdfExporter {
                 cursorY += 10f
             }
 
-            // 8. Companion Flowchart Decision Trail (if available)
+            // 8. Mechanic Voice-to-Text Observations & Bench Log
+            val voiceObservations = session.parsedVoiceObservations()
+            if (voiceObservations.isNotEmpty()) {
+                drawSectionHeader("6. MECHANIC VOICE-TO-TEXT OBSERVATIONS & BENCH LOG")
+                voiceObservations.forEach { entry ->
+                    drawWrappedParagraph(
+                        "[${entry.timestampLabel}] [${entry.stepTag} • ${entry.categoryTag}]",
+                        bodyBoldPaint,
+                        indentX = 4f
+                    )
+                    drawWrappedParagraph(
+                        entry.transcript,
+                        bodyRegularPaint,
+                        indentX = 12f
+                    )
+                    cursorY += 4f
+                }
+                cursorY += 6f
+            }
+
+            // 9. Companion Flowchart Decision Trail (if available)
             if (companionFlowchart != null) {
-                drawSectionHeader("6. COMPANION TROUBLESHOOTING DECISION TRAIL")
+                drawSectionHeader("7. COMPANION TROUBLESHOOTING DECISION TRAIL")
                 drawWrappedParagraph(
                     "Flowchart: ${companionFlowchart.title} (Status: ${if (companionFlowchart.isResolved) "RESOLVED" else "IN PROGRESS"})",
                     bodyBoldPaint,

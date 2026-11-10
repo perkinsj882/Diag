@@ -37,8 +37,10 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -64,17 +66,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.model.DiagnosticSession
 import com.example.data.model.FirestoreCacheStatus
 import com.example.data.model.SystemCategory
 import com.example.ui.components.CategoryBadge
+import com.example.ui.components.DiagnosticReportVoiceLoggerCard
 import com.example.ui.components.SeverityChip
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.SafetyAmber
 import com.example.ui.theme.SignalEmerald
+import com.example.util.DiagnosticCsvExporter
 import com.example.util.DiagnosticPdfExporter
+import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -87,8 +93,12 @@ fun RepairHistoryScreen(
     onSyncAndVerifyCache: () -> Unit,
     onToggleRepairStep: (DiagnosticSession, Int) -> Unit,
     onMarkResolved: (DiagnosticSession) -> Unit,
+    onAddVoiceObservation: (DiagnosticSession, String, String, String) -> Unit,
+    onDeleteVoiceObservation: (DiagnosticSession, String) -> Unit,
     onSavePdfReport: (DiagnosticSession, Uri) -> Unit,
     onEmailPdfReport: (DiagnosticSession) -> Unit,
+    onSaveCsvReports: (Set<String>?, Uri) -> Unit,
+    onShareCsvReports: (Set<String>?) -> Unit,
     onDeleteDiagnostic: (String) -> Unit,
     onOpenInDiagnoseLab: (String) -> Unit,
     onSeedReferenceLibrary: () -> Unit
@@ -100,6 +110,8 @@ fun RepairHistoryScreen(
         mutableStateOf(diagnosticsList.firstOrNull()?.id)
     }
     var pendingPdfSaveSession by remember { mutableStateOf<DiagnosticSession?>(null) }
+    var pendingCsvSessionIds by remember { mutableStateOf<Set<String>?>(null) }
+    var showCsvSchemaPreview by remember { mutableStateOf(false) }
 
     val createPdfDocumentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/pdf")
@@ -109,6 +121,15 @@ fun RepairHistoryScreen(
             onSavePdfReport(sessionToExport, targetUri)
         }
         pendingPdfSaveSession = null
+    }
+
+    val createCsvDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { targetUri: Uri? ->
+        if (targetUri != null) {
+            onSaveCsvReports(pendingCsvSessionIds, targetUri)
+        }
+        pendingCsvSessionIds = null
     }
 
     val filteredSessions = remember(diagnosticsList, searchQuery, selectedCategory, selectedStatus) {
@@ -122,7 +143,8 @@ fun RepairHistoryScreen(
                     session.rootCauseTitle.lowercase().contains(q) ||
                     session.symptomDescription.lowercase().contains(q) ||
                     session.environmentType.lowercase().contains(q) ||
-                    session.requiredTools.any { it.lowercase().contains(q) }
+                    session.requiredTools.any { it.lowercase().contains(q) } ||
+                    session.mechanicVoiceLogs.any { it.lowercase().contains(q) }
             }
             val matchesCategory = selectedCategory == null ||
                 session.systemCategory.equals(selectedCategory!!.label, ignoreCase = true)
@@ -210,13 +232,13 @@ fun RepairHistoryScreen(
                     }
 
                     Text(
-                        text = "Saved Diagnostic Sessions & Repair Guides",
+                        text = "Automotive Service Records & Repair Guides",
                         style = MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.onSurface
                     )
 
                     Text(
-                        text = "Diagnostic sessions, step-by-step repair checklists, and decision trees are cached on-device via Firestore PersistentCacheSettings. Toggle Remote Field Offline Mode when working in mines, offshore rigs, or air-gapped server vaults.",
+                        text = "Automotive diagnostic reports, step-by-step repair checklists, and OBD-II decision trees are stored on-device via Room SQLite + Firestore PersistentCache. Toggle Remote Field Offline Mode when working in subterranean garages, roadside breakdowns, or off-road trails.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -301,6 +323,164 @@ fun RepairHistoryScreen(
                                     "Verify & Pin All Guides in On-Device Cache (${cacheStatus.cachedDiagnosticsCount + cacheStatus.cachedFlowchartsCount} items)"
                                 }
                             )
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
+
+                    // Shop Management System (CSV) Export from Room SQLite
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(
+                                width = 1.dp,
+                                color = SignalEmerald.copy(alpha = 0.45f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .testTag("room_csv_export_card"),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.TableChart,
+                                        contentDescription = "Room SQLite CSV Export",
+                                        tint = SignalEmerald,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Column {
+                                        Text(
+                                            text = "SHOP MANAGEMENT SYSTEM (CSV) EXPORT",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = SignalEmerald,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "Room SQLite (diagnostic_reports) • ${filteredSessions.size} of ${diagnosticsList.size} Work Orders Selected",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                FilterChip(
+                                    selected = showCsvSchemaPreview,
+                                    onClick = { showCsvSchemaPreview = !showCsvSchemaPreview },
+                                    label = {
+                                        Text(
+                                            text = if (showCsvSchemaPreview) "Hide Schema" else "27 SMS Cols",
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    },
+                                    modifier = Modifier.testTag("toggle_csv_schema_preview_chip")
+                                )
+                            }
+
+                            Text(
+                                text = "Export locally stored Room diagnostic reports into an RFC-4180 UTF-8 CSV file with VIN, odometer mileage, labor book hours, OBD-II DTCs, repair steps, and voice notes for Tekmetric, Mitchell 1 Manager SE, Shopmonkey, or Excel.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            AnimatedVisibility(visible = showCsvSchemaPreview) {
+                                Card(
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.background
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "CSV HEADER SCHEMA (RFC-4180 UTF-8):",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = ElectricCyan,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = DiagnosticCsvExporter.SHOP_SMS_CSV_HEADERS.joinToString(", "),
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                fontFamily = FontFamily.Monospace
+                                            ),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+
+                            val exportTargetIds = remember(filteredSessions, diagnosticsList) {
+                                if (filteredSessions.size == diagnosticsList.size) {
+                                    null
+                                } else {
+                                    filteredSessions.map { it.id }.toSet()
+                                }
+                            }
+                            val exportCount = filteredSessions.size
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        pendingCsvSessionIds = exportTargetIds
+                                        createCsvDocumentLauncher.launch(
+                                            DiagnosticCsvExporter.buildSuggestedBatchFileName(exportCount)
+                                        )
+                                    },
+                                    enabled = exportCount > 0,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("batch_save_csv_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.TableChart,
+                                        contentDescription = "Save Room Diagnostics to CSV File",
+                                        tint = SignalEmerald,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Save CSV ($exportCount)")
+                                }
+
+                                Button(
+                                    onClick = {
+                                        onShareCsvReports(exportTargetIds)
+                                    },
+                                    enabled = exportCount > 0,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("batch_share_csv_button"),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = SignalEmerald,
+                                        contentColor = MaterialTheme.colorScheme.onTertiary
+                                    )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Share,
+                                        contentDescription = "Share CSV with Shop Management System",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Share Shop CSV", fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
                     }
                 }
@@ -462,6 +642,12 @@ fun RepairHistoryScreen(
                     },
                     onToggleStep = { stepIdx -> onToggleRepairStep(session, stepIdx) },
                     onMarkResolved = { onMarkResolved(session) },
+                    onAddVoiceObservation = { stepTag, catTag, text ->
+                        onAddVoiceObservation(session, stepTag, catTag, text)
+                    },
+                    onDeleteVoiceObservation = { obsId ->
+                        onDeleteVoiceObservation(session, obsId)
+                    },
                     onSavePdf = {
                         pendingPdfSaveSession = session
                         createPdfDocumentLauncher.launch(
@@ -470,6 +656,15 @@ fun RepairHistoryScreen(
                     },
                     onEmailPdf = {
                         onEmailPdfReport(session)
+                    },
+                    onSaveCsv = {
+                        pendingCsvSessionIds = setOf(session.id)
+                        createCsvDocumentLauncher.launch(
+                            DiagnosticCsvExporter.buildSuggestedSingleFileName(session)
+                        )
+                    },
+                    onShareCsv = {
+                        onShareCsvReports(setOf(session.id))
                     },
                     onOpenInLab = { onOpenInDiagnoseLab(session.id) },
                     onDelete = { onDeleteDiagnostic(session.id) }
@@ -520,8 +715,12 @@ private fun SavedDiagnosticArchiveCard(
     onToggleExpand: () -> Unit,
     onToggleStep: (Int) -> Unit,
     onMarkResolved: () -> Unit,
+    onAddVoiceObservation: (String, String, String) -> Unit,
+    onDeleteVoiceObservation: (String) -> Unit,
     onSavePdf: () -> Unit,
     onEmailPdf: () -> Unit,
+    onSaveCsv: () -> Unit,
+    onShareCsv: () -> Unit,
     onOpenInLab: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -621,6 +820,17 @@ private fun SavedDiagnosticArchiveCard(
                     style = MaterialTheme.typography.titleSmall,
                     color = ElectricCyan
                 )
+                if (session.vinNumber.isNotBlank() || session.odometerMileage > 0L) {
+                    val numFmt = remember { NumberFormat.getIntegerInstance(Locale.US) }
+                    val vinLabel = if (session.vinNumber.isNotBlank()) "VIN: ${session.vinNumber}" else null
+                    val miLabel = if (session.odometerMileage > 0L) "Odometer: ${numFmt.format(session.odometerMileage)} mi" else null
+                    Text(
+                        text = listOfNotNull(vinLabel, miLabel).joinToString("  •  "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SignalEmerald,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
                 Text(
                     text = "Symptom: ${session.symptomDescription}",
                     style = MaterialTheme.typography.bodySmall,
@@ -697,7 +907,7 @@ private fun SavedDiagnosticArchiveCard(
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "SAFETY & LOTO PRECAUTIONS",
+                                        text = "VEHICLE & SHOP SAFETY PRECAUTIONS",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = SafetyAmber,
                                         fontWeight = FontWeight.Bold
@@ -808,7 +1018,17 @@ private fun SavedDiagnosticArchiveCard(
                         }
                     }
 
-                    // PDF Service Report Export & Email Row (Direct from Firestore)
+                    // Microphone-Enabled Voice-to-Text Diagnostic Report Logger
+                    DiagnosticReportVoiceLoggerCard(
+                        session = session,
+                        onLogVoiceObservation = onAddVoiceObservation,
+                        onDeleteVoiceObservation = onDeleteVoiceObservation,
+                        onToggleRepairStep = onToggleStep,
+                        onMarkResolved = onMarkResolved,
+                        testTagPrefix = "history_report_voice_logger"
+                    )
+
+                    // PDF Service Report Export & Email Row
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -847,6 +1067,48 @@ private fun SavedDiagnosticArchiveCard(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Email PDF")
+                        }
+                    }
+
+                    // Shop Management System CSV Export Row (Direct from Room SQLite)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = onSaveCsv,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("save_csv_button_${session.id}")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.TableChart,
+                                contentDescription = "Save RO as CSV File",
+                                tint = SignalEmerald,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Save RO CSV")
+                        }
+
+                        Button(
+                            onClick = onShareCsv,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("share_csv_button_${session.id}"),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = SignalEmerald
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Share RO CSV with Shop Management System",
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Share RO CSV")
                         }
                     }
 

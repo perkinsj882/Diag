@@ -1,6 +1,6 @@
 {
   "name": "MechSight",
-  "description": "Multimodal AI diagnostics and step-by-step repair guides for mechanical, electrical, hydraulic, and pneumatic equipment across any operational environment.",
+  "description": "Multimodal automotive AI diagnostics, OBD-II & ECU fault isolation flowcharts, and vehicle-specific step-by-step repair guides across mechanical, electrical, hydraulic, pneumatic, and controller systems.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

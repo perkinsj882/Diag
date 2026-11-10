@@ -22,12 +22,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Air
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.DeveloperBoard
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -60,10 +59,9 @@ fun categoryIcon(categoryLabel: String): ImageVector {
     return when (SystemCategory.fromLabel(categoryLabel)) {
         SystemCategory.MECHANICAL -> Icons.Default.Settings
         SystemCategory.ELECTRICAL -> Icons.Default.Bolt
-        SystemCategory.HYDRAULIC -> Icons.Default.WaterDrop
-        SystemCategory.PNEUMATIC -> Icons.Default.Air
+        SystemCategory.HYDRAULIC -> Icons.Default.Album
+        SystemCategory.PNEUMATIC -> Icons.Default.DirectionsCar
         SystemCategory.COMPUTER_CONTROLLER -> Icons.Default.DeveloperBoard
-        SystemCategory.COMPUTER -> Icons.Default.Computer
     }
 }
 
@@ -74,7 +72,6 @@ fun categoryAccentColor(categoryLabel: String): Color {
         SystemCategory.HYDRAULIC -> Color(0xFF40C4FF)
         SystemCategory.PNEUMATIC -> SignalEmerald
         SystemCategory.COMPUTER_CONTROLLER -> ControllerViolet
-        SystemCategory.COMPUTER -> ElectricCyan
     }
 }
 
@@ -218,7 +215,7 @@ fun SchematicHeroBanner(
                 style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
             )
 
-            // Precision Gear & Node Schematic in top-right
+            // Automotive Tachometer / Rotor Schematic in top-right
             val cx = w * 0.86f
             val cy = h * 0.42f
             val rOuter = h * 0.28f
@@ -267,7 +264,7 @@ fun SchematicHeroBanner(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Mechanical • Electrical • Hydraulic • Pneumatic • Controllers • Computers",
+                    text = "Engine & Powertrain • Brakes • Steering & Suspension • Battery & Charging • ECU & CAN-Bus",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

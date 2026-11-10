@@ -50,21 +50,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.EnvironmentPreset
 import com.example.data.model.FlowchartNode
 import com.example.data.model.SystemCategory
 import com.example.data.model.TroubleshootingFlowchart
 import com.example.ui.components.CategoryBadge
+import com.example.ui.components.GuidedDiagnosticWorkflowPanel
 import com.example.ui.components.HandsFreeSpeechRecognizerCard
 import com.example.ui.components.categoryAccentColor
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.HazardCrimson
 import com.example.ui.theme.SafetyAmber
 import com.example.ui.theme.SignalEmerald
+import com.example.util.ObdBleScannerManager
 import com.example.viewmodel.AiTaskState
+import java.util.Locale
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -82,14 +88,15 @@ fun FlowchartsScreen(
         environmentType: String,
         failureModePrompt: String
     ) -> Unit,
-    onSeedReferenceLibrary: () -> Unit
+    onSeedReferenceLibrary: () -> Unit,
+    onCreateRepairGuideFromConclusion: ((TroubleshootingFlowchart, FlowchartNode) -> Unit)? = null
 ) {
     var filterCategory by remember { mutableStateOf<SystemCategory?>(null) }
     var showGeneratorSheet by remember { mutableStateOf(false) }
 
     var genCategory by remember { mutableStateOf(SystemCategory.COMPUTER_CONTROLLER) }
-    var genEquipmentModel by remember { mutableStateOf("Siemens S7-1500 / ControlLogix") }
-    var genEnvironment by remember { mutableStateOf(EnvironmentPreset.MANUFACTURING.label) }
+    var genEquipmentModel by remember { mutableStateOf("2021 Ford F-150 3.5L EcoBoost / OBD-II CAN") }
+    var genEnvironment by remember { mutableStateOf(EnvironmentPreset.AUTOMOTIVE_SERVICE_BAY.label) }
     var genFailurePrompt by remember {
         mutableStateOf(SystemCategory.COMPUTER_CONTROLLER.commonFailureModes.first())
     }
@@ -111,7 +118,8 @@ fun FlowchartsScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 16.dp)
+            .testTag("guided_diagnostic_workflow_list"),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
@@ -123,12 +131,12 @@ fun FlowchartsScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Interactive Decision Flowcharts",
+                        text = "Guided Diagnostic Workflow & Decision Trees",
                         style = MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Guided YES/NO conditional steps to narrow down failure causes.",
+                        text = "Select a vehicle system (Engine, Drivetrain, Steering, Brakes) and follow an AI-assisted troubleshooting path based on symptom inputs.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -147,9 +155,44 @@ fun FlowchartsScreen(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(if (showGeneratorSheet) "Hide Builder" else "New AI Tree")
+                    Text(if (showGeneratorSheet) "Hide Builder" else "Custom Builder")
                 }
             }
+        }
+
+        // Guided Diagnostic Workflow (System Selector + Symptom Input Multi-Selector + AI Path Launcher)
+        item {
+            GuidedDiagnosticWorkflowPanel(
+                aiTaskState = aiTaskState,
+                onSelectSystemCategoryFilter = { cat, systemId ->
+                    filterCategory = cat
+                    if (cat != null) {
+                        val matched = when (systemId) {
+                            "drivetrain" -> flowcharts.firstOrNull {
+                                it.title.contains("Drivetrain", ignoreCase = true) ||
+                                    it.title.contains("Transmission", ignoreCase = true) ||
+                                    it.equipmentModel.contains("10R80", ignoreCase = true)
+                            }
+                            "engine" -> flowcharts.firstOrNull {
+                                it.systemCategory.equals(cat.label, ignoreCase = true) &&
+                                    !it.title.contains("Drivetrain", ignoreCase = true)
+                            }
+                            else -> flowcharts.firstOrNull {
+                                it.systemCategory.equals(cat.label, ignoreCase = true)
+                            }
+                        } ?: flowcharts.firstOrNull {
+                            it.systemCategory.equals(cat.label, ignoreCase = true)
+                        }
+                        if (matched != null) {
+                            onSelectFlowchart(matched.id)
+                        }
+                    }
+                },
+                onGenerateGuidedAiPath = { model, cat, env, synthesizedPrompt ->
+                    filterCategory = cat
+                    onGenerateAiFlowchart(model, cat, env, synthesizedPrompt)
+                }
+            )
         }
 
         // AI Custom Flowchart Builder Panel
@@ -196,7 +239,7 @@ fun FlowchartsScreen(
                         OutlinedTextField(
                             value = genEquipmentModel,
                             onValueChange = { genEquipmentModel = it },
-                            label = { Text("Target Equipment / Controller / Computer Model") },
+                            label = { Text("Target Vehicle / Engine / ECU Model") },
                             singleLine = true,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -329,7 +372,7 @@ fun FlowchartsScreen(
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            text = "Load our pre-engineered decision trees covering PLC Controllers, Rack Servers/Computers, Hydraulics, Pneumatics, 3-Phase Electrical, and CNC Spindles, or generate a custom AI flowchart above.",
+                            text = "Load our pre-engineered automotive decision trees covering OBD-II CAN-Bus ECUs, VVT Timing Chains, Electronic Brake Boosters & ABS, EPAS Electric Steering Racks, and 12V/HV Charging Systems, or generate a custom AI flowchart above.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -352,7 +395,8 @@ fun FlowchartsScreen(
                     onAnswer = { ansLabel, targetId ->
                         onAnswerNode(activeFlowchart, ansLabel, targetId)
                     },
-                    onReset = { onResetWalkthrough(activeFlowchart) }
+                    onReset = { onResetWalkthrough(activeFlowchart) },
+                    onCreateRepairGuideFromConclusion = onCreateRepairGuideFromConclusion
                 )
             }
         }
@@ -438,8 +482,14 @@ fun FlowchartsScreen(
 private fun InteractiveFlowchartPlayerCard(
     flowchart: TroubleshootingFlowchart,
     onAnswer: (answerLabel: String, targetNodeId: String) -> Unit,
-    onReset: () -> Unit
+    onReset: () -> Unit,
+    onCreateRepairGuideFromConclusion: ((TroubleshootingFlowchart, FlowchartNode) -> Unit)? = null
 ) {
+    val context = LocalContext.current
+    val bleManager = remember(context) { ObdBleScannerManager.getInstance(context) }
+    val obdState by bleManager.uiState.collectAsStateWithLifecycle()
+    val liveSensors = obdState.liveSensors
+
     val nodes = remember(flowchart.nodesList) { flowchart.parsedNodes() }
     val currentNode: FlowchartNode = nodes.firstOrNull {
         it.nodeId.equals(flowchart.currentNodeId, ignoreCase = true)
@@ -503,6 +553,36 @@ private fun InteractiveFlowchartPlayerCard(
                 style = MaterialTheme.typography.titleSmall,
                 color = ElectricCyan
             )
+
+            // Live OBD-II Reference Readout Strip for the Active Diagnostic Step
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
+                    .border(1.dp, ElectricCyan.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .testTag("flowchart_live_obd_reference_strip"),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "LIVE OBD-II REF:",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = ElectricCyan,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "${liveSensors.engineRpm} RPM • ${liveSensors.coolantTempC}°C • STFT ${
+                        String.format(Locale.US, "%+.1f%%", liveSensors.shortTermFuelTrimB1)
+                    } • LTFT ${
+                        String.format(Locale.US, "%+.1f%%", liveSensors.longTermFuelTrimB1)
+                    } • ${String.format(Locale.US, "%.2fV", liveSensors.controlModuleVoltage)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
 
             // Visual Node Map Strip
             Row(
@@ -627,6 +707,29 @@ private fun InteractiveFlowchartPlayerCard(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
+                        }
+                    }
+
+                    if (isConclusion && onCreateRepairGuideFromConclusion != null) {
+                        Button(
+                            onClick = { onCreateRepairGuideFromConclusion(flowchart, currentNode) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("guided_workflow_create_repair_guide_button"),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = SignalEmerald,
+                                contentColor = MaterialTheme.colorScheme.onTertiary
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = "Generate Full Repair Guide"
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Generate Full Step-by-Step Repair Guide from Root Cause",
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }

@@ -26,7 +26,11 @@ service cloud.firestore {
 
     function isValidCategory(cat) {
       return cat is string && cat.size() >= 1 && cat.size() <= 40 &&
-             cat in ['Mechanical', 'Electrical', 'Hydraulic', 'Pneumatic', 'Computer Controller', 'Computer'];
+             cat in [
+               'Engine & Powertrain', 'Battery, Starting & Charging', 'Brakes',
+               'Steering & Suspension', 'ECU, Modules & CAN-Bus',
+               'Mechanical', 'Electrical', 'Hydraulic', 'Pneumatic', 'Computer Controller', 'Computer'
+             ];
     }
 
     function isValidSeverity(sev) {

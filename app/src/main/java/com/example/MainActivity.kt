@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
@@ -65,11 +66,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.data.local.MechSightDatabase
 import com.example.data.model.EquipmentProfile
 import com.example.data.model.FirestoreCacheStatus
+import com.example.data.model.SystemCategory
 import com.example.data.repository.MechSightRepository
 import com.example.ui.auth.AuthScreen
 import com.example.ui.auth.signOutUser
+import com.example.ui.screens.AnalyticsDashboardScreen
 import com.example.ui.screens.DiagnoseLabScreen
 import com.example.ui.screens.EquipmentFleetScreen
 import com.example.ui.screens.FlowchartsScreen
@@ -118,16 +122,21 @@ internal fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
 @Composable
 fun AppNavigation(auth: FirebaseAuth = Firebase.auth) {
     val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
+    var isLocalRoomSession by rememberSaveable { mutableStateOf(false) }
     val user = currentUser
 
-    if (user == null) {
+    if (user == null && !isLocalRoomSession) {
         AuthScreen(
-            onAuthSuccess = { /* AuthStateListener updates currentUser automatically */ }
+            onAuthSuccess = { /* AuthStateListener updates currentUser automatically */ },
+            onEnterOfflineRoomMode = { isLocalRoomSession = true }
         )
     } else {
         MechSightAuthenticatedApp(
-            currentUserId = user.uid,
-            userEmail = user.email ?: "Operator"
+            currentUserId = user?.uid ?: "local_field_operator",
+            userEmail = user?.email ?: "Local Room DB",
+            onExitSession = {
+                isLocalRoomSession = false
+            }
         )
     }
 }
@@ -136,6 +145,7 @@ private enum class MechSightTab {
     DIAGNOSE,
     FLOWCHARTS,
     HISTORY,
+    ANALYTICS,
     EQUIPMENT
 }
 
@@ -143,7 +153,8 @@ private enum class MechSightTab {
 @Composable
 fun MechSightAuthenticatedApp(
     currentUserId: String,
-    userEmail: String
+    userEmail: String,
+    onExitSession: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -160,7 +171,8 @@ fun MechSightAuthenticatedApp(
                 val db = FirebaseFirestore.getInstance(databaseId).also { firestore ->
                     MechSightRepository.configurePersistentCache(firestore)
                 }
-                MechSightViewModel(MechSightRepository(db), currentUserId)
+                val roomDao = MechSightDatabase.getInstance(app).mechSightDao()
+                MechSightViewModel(MechSightRepository(db, roomDao), currentUserId)
             }
         }
     )
@@ -180,6 +192,7 @@ fun MechSightAuthenticatedApp(
     val flowchartsState by viewModel.flowchartsState.collectAsStateWithLifecycle()
     val cacheStatus by viewModel.cacheStatus.collectAsStateWithLifecycle()
     val aiTaskState by viewModel.aiTaskState.collectAsStateWithLifecycle()
+    val visualPartIdState by viewModel.visualPartIdState.collectAsStateWithLifecycle()
     val activeDiagnosticId by viewModel.activeDiagnosticId.collectAsStateWithLifecycle()
     val activeFlowchartId by viewModel.activeFlowchartId.collectAsStateWithLifecycle()
     val statusBanner by viewModel.statusBanner.collectAsStateWithLifecycle()
@@ -237,7 +250,7 @@ fun MechSightAuthenticatedApp(
                         onClick = {
                             signOutUser(
                                 context = context,
-                                onSignOutComplete = {},
+                                onSignOutComplete = onExitSession,
                                 scope = scope
                             )
                         },
@@ -296,6 +309,18 @@ fun MechSightAuthenticatedApp(
                     modifier = Modifier.testTag("nav_tab_history")
                 )
                 NavigationBarItem(
+                    selected = currentTab == MechSightTab.ANALYTICS,
+                    onClick = { currentTab = MechSightTab.ANALYTICS },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.BarChart,
+                            contentDescription = stringResource(R.string.nav_analytics)
+                        )
+                    },
+                    label = { Text(stringResource(R.string.nav_analytics)) },
+                    modifier = Modifier.testTag("nav_tab_analytics")
+                )
+                NavigationBarItem(
                     selected = currentTab == MechSightTab.EQUIPMENT,
                     onClick = { currentTab = MechSightTab.EQUIPMENT },
                     icon = {
@@ -338,8 +363,9 @@ fun MechSightAuthenticatedApp(
                             diagnosticsList = diagnosticsList,
                             activeDiagnosticId = activeDiagnosticId,
                             aiTaskState = aiTaskState,
+                            visualPartIdState = visualPartIdState,
                             preselectedEquipment = preselectedEquipment,
-                            onRunDiagnosis = { eqName, eqModel, cat, env, symptom, bmp, bytes, mime, acoustic, label ->
+                            onRunDiagnosis = { eqName, eqModel, cat, env, symptom, bmp, bytes, mime, acoustic, label, initialVoiceLogs, vinNumber, odometerMileage ->
                                 viewModel.runMultimodalDiagnosis(
                                     equipmentName = eqName,
                                     equipmentModel = eqModel,
@@ -350,8 +376,23 @@ fun MechSightAuthenticatedApp(
                                     attachedMediaBytes = bytes,
                                     attachedMediaMimeType = mime,
                                     acousticSummary = acoustic,
-                                    mediaSummaryLabel = label
+                                    mediaSummaryLabel = label,
+                                    initialVoiceLogs = initialVoiceLogs,
+                                    vinNumber = vinNumber,
+                                    odometerMileage = odometerMileage
                                 )
+                            },
+                            onIdentifyAutomotivePart = { bmp, hint, eqName, eqModel, activeSession ->
+                                viewModel.identifyAutomotivePartFromCamera(
+                                    bitmap = bmp,
+                                    partContextHint = hint,
+                                    equipmentName = eqName,
+                                    equipmentModel = eqModel,
+                                    activeSession = activeSession
+                                )
+                            },
+                            onClearVisualPartIdState = {
+                                viewModel.clearVisualPartIdState()
                             },
                             onToggleRepairStep = { session, stepIdx ->
                                 viewModel.toggleRepairStep(session, stepIdx)
@@ -359,11 +400,30 @@ fun MechSightAuthenticatedApp(
                             onMarkResolved = { session ->
                                 viewModel.markDiagnosticResolved(session)
                             },
+                            onAddVoiceObservation = { session, stepTag, catTag, text ->
+                                viewModel.addVoiceObservationToDiagnostic(session, stepTag, catTag, text)
+                            },
+                            onDeleteVoiceObservation = { session, obsId ->
+                                viewModel.deleteVoiceObservationFromDiagnostic(session, obsId)
+                            },
                             onSavePdfReport = { session, targetUri ->
                                 viewModel.exportDiagnosticPdfToUri(context, session.id, targetUri)
                             },
                             onEmailPdfReport = { session ->
                                 viewModel.emailOrShareDiagnosticPdf(context, session.id)
+                            },
+                            onSaveCsvReport = { session, targetUri ->
+                                viewModel.exportRoomDiagnosticsCsvToUri(
+                                    context = context,
+                                    targetUri = targetUri,
+                                    sessionIdsFilter = setOf(session.id)
+                                )
+                            },
+                            onShareCsvReport = { session ->
+                                viewModel.shareOrEmailRoomDiagnosticsCsv(
+                                    context = context,
+                                    sessionIdsFilter = setOf(session.id)
+                                )
                             },
                             onOpenFlowchart = { flowchartId ->
                                 viewModel.selectFlowchart(flowchartId)
@@ -408,6 +468,28 @@ fun MechSightAuthenticatedApp(
                             },
                             onSeedReferenceLibrary = {
                                 viewModel.seedReferenceLibrary()
+                            },
+                            onCreateRepairGuideFromConclusion = { flowchart, conclusionNode ->
+                                val cat = SystemCategory.fromLabel(flowchart.systemCategory)
+                                val prompt = buildString {
+                                    append("Guided Diagnostic Path Isolated Root Cause: ${conclusionNode.prompt}. ")
+                                    append("Recommended Action: ${conclusionNode.recommendedAction}. ")
+                                    append("Decision Trail: ${flowchart.visitedPathSummary}. ")
+                                    append("Original Symptom: ${flowchart.failureMode}")
+                                }
+                                viewModel.runMultimodalDiagnosis(
+                                    equipmentName = flowchart.title,
+                                    equipmentModel = flowchart.equipmentModel,
+                                    systemCategory = cat,
+                                    environmentType = flowchart.environmentType,
+                                    symptomDescription = prompt,
+                                    attachedBitmap = null,
+                                    attachedMediaBytes = null,
+                                    attachedMediaMimeType = null,
+                                    acousticSummary = "",
+                                    mediaSummaryLabel = "Guided Workflow Path (${flowchart.visitedPathSummary})"
+                                )
+                                currentTab = MechSightTab.DIAGNOSE
                             }
                         )
                     }
@@ -428,11 +510,30 @@ fun MechSightAuthenticatedApp(
                             onMarkResolved = { session ->
                                 viewModel.markDiagnosticResolved(session)
                             },
+                            onAddVoiceObservation = { session, stepTag, catTag, text ->
+                                viewModel.addVoiceObservationToDiagnostic(session, stepTag, catTag, text)
+                            },
+                            onDeleteVoiceObservation = { session, obsId ->
+                                viewModel.deleteVoiceObservationFromDiagnostic(session, obsId)
+                            },
                             onSavePdfReport = { session, targetUri ->
                                 viewModel.exportDiagnosticPdfToUri(context, session.id, targetUri)
                             },
                             onEmailPdfReport = { session ->
                                 viewModel.emailOrShareDiagnosticPdf(context, session.id)
+                            },
+                            onSaveCsvReports = { sessionIdsFilter, targetUri ->
+                                viewModel.exportRoomDiagnosticsCsvToUri(
+                                    context = context,
+                                    targetUri = targetUri,
+                                    sessionIdsFilter = sessionIdsFilter
+                                )
+                            },
+                            onShareCsvReports = { sessionIdsFilter ->
+                                viewModel.shareOrEmailRoomDiagnosticsCsv(
+                                    context = context,
+                                    sessionIdsFilter = sessionIdsFilter
+                                )
                             },
                             onDeleteDiagnostic = { diagId ->
                                 viewModel.deleteDiagnosticSession(diagId)
@@ -440,6 +541,22 @@ fun MechSightAuthenticatedApp(
                             onOpenInDiagnoseLab = { diagId ->
                                 viewModel.selectDiagnostic(diagId)
                                 currentTab = MechSightTab.DIAGNOSE
+                            },
+                            onSeedReferenceLibrary = {
+                                viewModel.seedReferenceLibrary()
+                            }
+                        )
+                    }
+
+                    MechSightTab.ANALYTICS -> {
+                        AnalyticsDashboardScreen(
+                            diagnosticsList = diagnosticsList,
+                            onAdjustRepairDuration = { session, newMinutes ->
+                                viewModel.updateRepairDuration(session, newMinutes)
+                            },
+                            onOpenDiagnosticInHistory = { diagId ->
+                                viewModel.selectDiagnostic(diagId)
+                                currentTab = MechSightTab.HISTORY
                             },
                             onSeedReferenceLibrary = {
                                 viewModel.seedReferenceLibrary()
@@ -505,16 +622,16 @@ private fun CacheStatusHeaderPill(
                 isOffline -> Icons.Default.CloudOff
                 else -> Icons.Default.CloudDone
             },
-            contentDescription = "Firestore Cache Status",
+            contentDescription = "Room + Firestore Cache Status",
             tint = accent,
             modifier = Modifier.size(15.dp)
         )
         Text(
             text = when {
-                cacheStatus.isForcedOfflineMode -> "FIELD OFFLINE (${cacheStatus.cachedDiagnosticsCount})"
-                !cacheStatus.isNetworkAvailable -> "CACHED OFFLINE (${cacheStatus.cachedDiagnosticsCount})"
-                hasPending -> "SYNCING (${cacheStatus.pendingWritesCount})"
-                else -> "CACHED (${cacheStatus.cachedDiagnosticsCount})"
+                cacheStatus.isForcedOfflineMode -> "ROOM OFFLINE (${cacheStatus.cachedDiagnosticsCount})"
+                !cacheStatus.isNetworkAvailable -> "ROOM DB (${cacheStatus.cachedDiagnosticsCount})"
+                hasPending -> "ROOM + SYNC (${cacheStatus.cachedDiagnosticsCount})"
+                else -> "ROOM + CLOUD (${cacheStatus.cachedDiagnosticsCount})"
             },
             style = MaterialTheme.typography.labelSmall,
             color = accent,
@@ -545,23 +662,20 @@ private fun OfflineFieldCacheBanner(
         ) {
             Icon(
                 imageVector = if (cacheStatus.pendingWritesCount > 0) Icons.Default.CloudSync else Icons.Default.CloudOff,
-                contentDescription = "Offline Cache Active",
+                contentDescription = "Room Local Database Active",
                 tint = SafetyAmber,
                 modifier = Modifier.size(18.dp)
             )
             Text(
                 text = buildString {
                     if (cacheStatus.isForcedOfflineMode) {
-                        append("Remote Field Offline Mode: ")
+                        append("Remote Field Offline Mode (Room SQLite): ")
                     } else if (!cacheStatus.isNetworkAvailable) {
-                        append("No Signal — Serving from Firestore Cache: ")
+                        append("No Signal — Serving from Local Room DB: ")
                     } else {
-                        append("Local Cache Active: ")
+                        append("Local Room SQLite Active: ")
                     }
-                    append("${cacheStatus.cachedDiagnosticsCount} guides & ${cacheStatus.cachedFlowchartsCount} flowcharts available offline")
-                    if (cacheStatus.pendingWritesCount > 0) {
-                        append(" • ${cacheStatus.pendingWritesCount} edits queued")
-                    }
+                    append("${cacheStatus.cachedDiagnosticsCount} guides & ${cacheStatus.cachedFlowchartsCount} flowcharts stored locally")
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurface

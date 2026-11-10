@@ -13,69 +13,74 @@ enum class SystemCategory(
     val commonFailureModes: List<String>
 ) {
     MECHANICAL(
-        label = "Mechanical",
-        badgeCode = "MECH",
-        subtitle = "Bearings, Gearboxes, Shafts, Turbines & Engines",
+        label = "Engine & Powertrain",
+        badgeCode = "ENG",
+        subtitle = "Engines, Valvetrain, Timing Chains, Turbo/Boost, Fuel Systems, Cooling & Transmissions",
         commonFailureModes = listOf(
-            "High-frequency bearing vibration & thermal rise",
-            "Gearbox tooth backlash & metallic oil debris",
-            "Shaft misalignment & coupling shear under load"
-        )
-    ),
-    ELECTRICAL(
-        label = "Electrical",
-        badgeCode = "ELEC",
-        subtitle = "3-Phase Motors, Transformers, Relays & Switchgear",
-        commonFailureModes = listOf(
-            "3-phase motor overload trip & winding insulation breakdown",
-            "Contactor chatter & control transformer voltage sag",
-            "Ground fault interrupter nuisance tripping under moisture"
+            "Cold-start VVT cam phaser rattle & timing chain slack (P0016)",
+            "Turbocharger underboost code (P0299) & intercooler charge-pipe boost leak",
+            "Torque converter shudder at 40-55 MPH & transmission shift flare"
         )
     ),
     HYDRAULIC(
-        label = "Hydraulic",
-        badgeCode = "HYDR",
-        subtitle = "Pumps, Cylinders, Proportional Valves & Accumulators",
+        label = "Brakes",
+        badgeCode = "BRK",
+        subtitle = "Disc & Drum Brakes, Electronic Brake Boosters (iBooster), Brake-by-Wire, ABS/ESC & EPB",
         commonFailureModes = listOf(
-            "Pump cavitation whine & slow actuator cycle under load",
-            "Directional spool valve sticking & pressure relief drift",
-            "Cylinder internal bypass & hydraulic fluid overheating"
+            "Electronic brake booster (iBooster) assist fault or spongy brake pedal feel",
+            "ABS / Stability Control wheel speed sensor fault (C0035) & traction light",
+            "Electronic Parking Brake (EPB) rear caliper actuator jam or service-mode fault"
         )
     ),
     PNEUMATIC(
-        label = "Pneumatic",
-        badgeCode = "PNEU",
-        subtitle = "Compressors, Solenoid Manifolds, FRLs & Cylinders",
+        label = "Steering & Suspension",
+        badgeCode = "STRG",
+        subtitle = "Electric Rack & Pinion (EPAS), Tie Rods, Struts, Control Arms, Wheel Bearings & Air Ride",
         commonFailureModes = listOf(
-            "Actuator sluggish stroke & manifold exhaust air leak",
-            "FRL regulator pressure drop & moisture carryover in lines",
-            "Compressor unloader valve failure & short-cycling"
+            "Electric Power Assisted Steering (EPAS) rack & pinion torque sensor fault & loss of assist",
+            "Front wheel hub bearing growl above 45 MPH or lower control arm ball joint clunk",
+            "Electronic air suspension ride-height sensor fault or rear corner sag overnight"
+        )
+    ),
+    ELECTRICAL(
+        label = "Battery, Starting & Charging",
+        badgeCode = "ELEC",
+        subtitle = "12V/48V/HV EV Batteries, Alternators, Starters, Relays, Fuses & Wiring Harnesses",
+        commonFailureModes = listOf(
+            "Overnight parasitic battery drain (> 350 mA) & no-crank morning start",
+            "Alternator voltage regulator ripple & battery warning light under load",
+            "Starter solenoid click with high voltage drop across engine ground strap"
         )
     ),
     COMPUTER_CONTROLLER(
-        label = "Computer Controller",
-        badgeCode = "CTRL",
-        subtitle = "PLCs, CNCs, VFD/Servo Drives, ECUs & SCADA RTUs",
+        label = "ECU, Modules & CAN-Bus",
+        badgeCode = "ECU",
+        subtitle = "ECM/PCM, TCM, BCM, ADAS Modules, 5V Sensor Reference & OBD-II CAN-Bus Networks",
         commonFailureModes = listOf(
-            "PLC CPU Fault LED flashing red & fieldbus I/O communication loss",
-            "VFD DC bus overvoltage trip during deceleration",
-            "ECU CAN-bus timeout & analog sensor 4-20mA signal drift"
-        )
-    ),
-    COMPUTER(
-        label = "Computer",
-        badgeCode = "COMP",
-        subtitle = "Industrial PCs, Rack Servers, Workstations & Edge Nodes",
-        commonFailureModes = listOf(
-            "No POST / Beep code sequence & DRAM/PCIe initialization halt",
-            "Kernel panic / WHEA uncorrectable hardware error under load",
-            "Thermal throttling, VRM overheating & NVMe RAID array degraded"
+            "OBD-II U0100 Lost Communication with ECM/PCM on High-Speed CAN-Bus",
+            "5V sensor reference bus (VREF) pulled low by shorted pressure sensor (P06A6)",
+            "TCM limp-home mode with CAN gateway or shift solenoid circuit fault"
         )
     );
 
     companion object {
         fun fromLabel(label: String): SystemCategory {
-            return entries.firstOrNull { it.label.equals(label, ignoreCase = true) } ?: MECHANICAL
+            val normalized = label.trim().lowercase()
+            return when {
+                normalized.contains("brake") || normalized == "brk" || normalized == "hydraulic" || normalized == "hydr" -> HYDRAULIC
+                normalized.contains("steering") || normalized.contains("suspension") || normalized.contains("epas") ||
+                    normalized == "strg" || normalized == "pneumatic" || normalized == "pneu" -> PNEUMATIC
+                normalized.contains("battery") || normalized.contains("charging") || normalized.contains("electrical") ||
+                    normalized == "elec" -> ELECTRICAL
+                normalized.contains("ecu") || normalized.contains("can-bus") || normalized.contains("computer") ||
+                    normalized.contains("module") -> COMPUTER_CONTROLLER
+                normalized.contains("engine") || normalized.contains("powertrain") || normalized == "eng" ||
+                    normalized == "mechanical" || normalized == "mech" -> MECHANICAL
+                else -> entries.firstOrNull {
+                    it.label.equals(label, ignoreCase = true) ||
+                        it.badgeCode.equals(label, ignoreCase = true)
+                } ?: MECHANICAL
+            }
         }
     }
 }
@@ -84,13 +89,13 @@ enum class EnvironmentPreset(
     val label: String,
     val hazardNote: String
 ) {
-    MANUFACTURING("Manufacturing Floor", "EMI, coolant mist, continuous 24/7 duty cycle"),
-    HEAVY_INDUSTRIAL("Heavy Industrial", "High shock loads, abrasive dust, extreme thermal swings"),
-    DATA_CENTER("Data Center / Server Room", "ESD sensitive, strict airflow & redundant PSU rails"),
-    AUTOMOTIVE_FLEET("Automotive / Fleet", "Road vibration, 12V/24V transient spikes, weather exposure"),
-    MARINE_OFFSHORE("Marine / Offshore", "Salt-fog corrosion, high humidity, bilge vapor hazards"),
-    HVAC_BUILDING("HVAC / Building", "Rooftop UV exposure, refrigerant pressure, damper linkage"),
-    FIELD_AGRICULTURAL("Field / Agricultural", "Mud/debris ingress, hydraulic implement contamination")
+    AUTOMOTIVE_SERVICE_BAY("Automotive Service Bay", "2-post lift inspection, OBD-II bi-directional scan tool, battery support"),
+    DAILY_STREET_HIGHWAY("Street & Highway Commute", "Stop-and-go thermal cycling, highway cruise load, road debris & moisture"),
+    HEAVY_TOWING_HAULING("Heavy Towing & Hauling", "High ATF/coolant temperatures, steep grade boost load, heavy braking duty"),
+    OFF_ROAD_TRAIL("Off-Road & 4x4 Trail", "Mud/water splash ingress, suspension articulation stress, 4WD transfer case load"),
+    EXTREME_COLD_WINTER("Sub-Zero Winter / Cold Start", "High CCA cranking draw, thickened oil viscosity, road salt corrosion"),
+    TRACK_PERFORMANCE("Track & High-Performance", "Sustained high RPM, turbo heat soak, elevated brake fluid temperatures"),
+    EV_HYBRID_HIGH_VOLTAGE("EV & Hybrid High-Voltage", "400V/800V orange HV cables, inverter coolant loop, regenerative braking")
 }
 
 @IgnoreExtraProperties
@@ -100,7 +105,7 @@ data class EquipmentProfile(
     val name: String = "",
     val modelNumber: String = "",
     val systemCategory: String = SystemCategory.MECHANICAL.label,
-    val environmentType: String = EnvironmentPreset.MANUFACTURING.label,
+    val environmentType: String = EnvironmentPreset.AUTOMOTIVE_SERVICE_BAY.label,
     val operatingHours: Long = 0L,
     val notes: String = "",
     @ServerTimestamp val createdAt: Timestamp? = null,
@@ -109,6 +114,46 @@ data class EquipmentProfile(
     @get:Exclude val hasPendingWrites: Boolean = false
 )
 
+data class MechanicVoiceObservation(
+    val id: String = "",
+    val timestampLabel: String = "",
+    val stepTag: String = "GENERAL",
+    val categoryTag: String = "MEASUREMENT",
+    val transcript: String = ""
+) {
+    fun toEncodedString(): String {
+        val cleanId = id.replace("::", "-").ifBlank { "vn_${System.currentTimeMillis()}" }
+        val cleanTs = timestampLabel.replace("::", "-").ifBlank { "Logged" }
+        val cleanStep = stepTag.replace("::", "-").ifBlank { "GENERAL" }
+        val cleanCat = categoryTag.replace("::", "-").ifBlank { "OBSERVATION" }
+        val cleanText = transcript.replace("::", " - ").trim().take(600)
+        return listOf(cleanId, cleanTs, cleanStep, cleanCat, cleanText).joinToString("::")
+    }
+
+    companion object {
+        fun fromEncodedString(encoded: String): MechanicVoiceObservation {
+            val parts = encoded.split("::")
+            return if (parts.size >= 5) {
+                MechanicVoiceObservation(
+                    id = parts[0].ifBlank { "vn_0" },
+                    timestampLabel = parts[1].ifBlank { "Logged" },
+                    stepTag = parts[2].ifBlank { "GENERAL" },
+                    categoryTag = parts[3].ifBlank { "OBSERVATION" },
+                    transcript = parts.drop(4).joinToString("::")
+                )
+            } else {
+                MechanicVoiceObservation(
+                    id = "vn_${encoded.hashCode()}",
+                    timestampLabel = "Field Log",
+                    stepTag = "GENERAL",
+                    categoryTag = "OBSERVATION",
+                    transcript = encoded
+                )
+            }
+        }
+    }
+}
+
 @IgnoreExtraProperties
 data class DiagnosticSession(
     @DocumentId val id: String = "",
@@ -116,7 +161,7 @@ data class DiagnosticSession(
     val equipmentName: String = "",
     val equipmentModel: String = "",
     val systemCategory: String = SystemCategory.MECHANICAL.label,
-    val environmentType: String = EnvironmentPreset.MANUFACTURING.label,
+    val environmentType: String = EnvironmentPreset.AUTOMOTIVE_SERVICE_BAY.label,
     val symptomDescription: String = "",
     val attachedMediaSummary: String = "",
     val rootCauseTitle: String = "",
@@ -132,8 +177,34 @@ data class DiagnosticSession(
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null,
     @get:Exclude val isFromCache: Boolean = false,
-    @get:Exclude val hasPendingWrites: Boolean = false
-)
+    @get:Exclude val hasPendingWrites: Boolean = false,
+    @get:Exclude val repairDurationMinutes: Int = 0,
+    @get:Exclude val mechanicVoiceLogs: List<String> = emptyList(),
+    @get:Exclude val vinNumber: String = "",
+    @get:Exclude val odometerMileage: Long = 0L
+) {
+    fun parsedVoiceObservations(): List<MechanicVoiceObservation> {
+        return mechanicVoiceLogs.map { MechanicVoiceObservation.fromEncodedString(it) }
+    }
+
+    fun effectiveRepairMinutes(): Int {
+        if (repairDurationMinutes > 0) return repairDurationMinutes
+        val basePerStep = when (severity.uppercase()) {
+            "CRITICAL" -> 18
+            "HIGH" -> 14
+            "MODERATE" -> 11
+            else -> 8
+        }
+        val domainOffset = when (SystemCategory.fromLabel(systemCategory)) {
+            SystemCategory.HYDRAULIC -> 16
+            SystemCategory.MECHANICAL -> 20
+            SystemCategory.ELECTRICAL -> 12
+            SystemCategory.COMPUTER_CONTROLLER -> 10
+            SystemCategory.PNEUMATIC -> 8
+        }
+        return (repairSteps.size.coerceAtLeast(2) * basePerStep) + domainOffset
+    }
+}
 
 data class FlowchartNode(
     val nodeId: String = "N1",
@@ -182,10 +253,10 @@ data class TroubleshootingFlowchart(
     val title: String = "",
     val equipmentModel: String = "",
     val systemCategory: String = SystemCategory.COMPUTER_CONTROLLER.label,
-    val environmentType: String = EnvironmentPreset.MANUFACTURING.label,
+    val environmentType: String = EnvironmentPreset.AUTOMOTIVE_SERVICE_BAY.label,
     val failureMode: String = "",
     val currentNodeId: String = "N1",
-    val visitedPathSummary: String = "Started interactive troubleshooting",
+    val visitedPathSummary: String = "Started interactive automotive troubleshooting",
     val nodesList: List<String> = emptyList(),
     @get:com.google.firebase.firestore.PropertyName("isResolved")
     @field:com.google.firebase.firestore.PropertyName("isResolved")
